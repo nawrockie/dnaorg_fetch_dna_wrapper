@@ -15,7 +15,7 @@ $execdir =~ s/\/$//; # remove trailing '/' if one exists
 
 # definitions of variables
 my $fail_ntests       =  1; # number of 'fail' tests,    the tests that are     expected to return a failure (non-zero exit status)
-my $nofail_ntests     =  2; # number of 'no fail' tests, the tests that are not expected to return a failure (non-zero exit status)
+my $nofail_ntests     =  4; # number of 'no fail' tests, the tests that are not expected to return a failure (non-zero exit status)
 my @fail_descA        = (); # brief descriptions of each fail test, for informative output
 my @nofail_descA      = (); # brief descriptions of each no fail test, for informative output
 my @fail_argA         = (); # name of single command line argument for each fail test
@@ -31,9 +31,13 @@ my @nofail_noutlinesA = (); # number of expected stdout output lines for no fail
 my ($f, $n);                # counter over fail and no fail tests, respectively
 my $cmd;                    # a command to run with system()
 
+# number of expected lines to stderr if script fails
+my $fail_exp_nerrlines = 53;
+
 # number of expected lines for successful execution of script
 my $nofail_exp_noutlines_protein    = 36;
 my $nofail_exp_noutlines_nucleotide = 33;
+my $nofail_exp_noutlines_num        = 28;
 
 
 # check executable files exist
@@ -53,6 +57,8 @@ for($f = 0; $f < $fail_ntests; $f++) {
 # tests that are expected to not fail
 $nofail_descA[0]  = "protein symbol mode";
 $nofail_descA[1]  = "nucleotide symbol mode";
+$nofail_descA[2]  = "list mode";
+$nofail_descA[3]  = "num mode";
 # make sure we have descriptions for all no fail tests
 for($n = 0; $n < $nofail_ntests; $n++) { 
   if((! defined $nofail_descA[$n]) || ($nofail_descA[$n] eq "")) { 
@@ -69,12 +75,18 @@ $fail_inputA[0] = "-f -d $fail_dirA[0] $fail_argA[0]";
 # set input command line arguments and options:
 $nofail_argA[0] = "USP17L5";
 $nofail_argA[1] = "SNORA71D";
+$nofail_argA[2] = "samp5.list";
+$nofail_argA[3] = "SNORA71D";
 
 $nofail_dirA[0] = "nofail0";
 $nofail_dirA[1] = "nofail1";
+$nofail_dirA[2] = "nofail2";
+$nofail_dirA[3] = "nofail3";
 
 $nofail_inputA[0] = "-f -d $nofail_dirA[0] $nofail_argA[0]";
-$nofail_inputA[1] = "-nt -f -d $nofail_dirA[1] $nofail_argA[1]";
+$nofail_inputA[1] = "-f -d $nofail_dirA[1] $nofail_argA[1]";
+$nofail_inputA[2] = "-f -plist -d $nofail_dirA[2] $nofail_argA[2]";
+$nofail_inputA[3] = "-f -num -d $nofail_dirA[3] $nofail_argA[3]";
 
 ## check that required inputs/outputs exist
 #for($f = 0; $f < $fail_ntests; $f++) { 
@@ -94,7 +106,7 @@ $nofail_inputA[1] = "-nt -f -d $nofail_dirA[1] $nofail_argA[1]";
 # and whether or not it's okay for each fail test to
 # create some stdout, or not
 for($f = 0; $f < $fail_ntests; $f++) { 
-  $fail_nerrlinesA[$f] = 19;
+  $fail_nerrlinesA[$f] = $fail_exp_nerrlines;
   $fail_stdout_okayA[$f] = 0; # not okay, by default
 }
 # set exceptions: 
@@ -102,6 +114,8 @@ for($f = 0; $f < $fail_ntests; $f++) {
 
 $nofail_noutlinesA[0]  = $nofail_exp_noutlines_protein;
 $nofail_noutlinesA[1]  = $nofail_exp_noutlines_nucleotide;
+$nofail_noutlinesA[2]  = $nofail_exp_noutlines_protein;
+$nofail_noutlinesA[3]  = $nofail_exp_noutlines_num;
 
 # Run fail tests (these should create stderr output)
 for($f = 0; $f < $fail_ntests; $f++) { 

@@ -4,8 +4,9 @@
 # Example of running dnaorg_fetch_dna_wrapper.pl to fetch
 # nucleotide sequences. The program can be used to:
 # mode A) fetch CDS sequences of proteins that link to a gene symbol
-# mode B) fetch CDS sequences of protein accessions listed in a file
-# mode C) fetch DNA sequences of nucleotide accessions listed in a file
+# mode B) fetch nucleotide sequences of noncoding genes that link to a gene symbol
+# mode C) fetch CDS sequences of protein accessions listed in a file
+# mode D) fetch nucleotide sequences of nucleotide accessions listed in a file
 #
 # This is a wrapper Perl script which calls other programs,
 # including those housed/described in the following directories:
@@ -25,8 +26,9 @@
 # For more information, see the 00NOTES.* files in the above listed
 # 'dnaorg/programs/' directories.
 #
-# Also, see /home/nawrocke/notebook/15_0310_dnaorg_fetch_cds_wrapper/00LOG.txt
-# for notes on development and testing of this program.
+# Also, see /home/nawrocke/notebook/15_0415_dnaorg_fetch_dna_wrapper/00LOG.txt
+# and /home/nawrocke/notebook/15_0310_dnaorg_fetch_cds_wrapper/00LOG.txt
+# for notes on development and testing of this program and its predecessor.
 # 
 #######################
 # Prerequisites
@@ -43,87 +45,106 @@ source /panfs/pan1/dnaorg/programs/setup-bio-easel.csh.sh
 #######################
 # Usage and options
 #######################
+# The default output is informative about how to use the script:
 # $ perl dnaorg_fetch_dna_wrapper.pl 
-# dnaorg_fetch_cds_wrapper.pl [OPTIONS] <symbol (from GENE database, e.g. 'infB'>
-# dnaorg_fetch_cds_wrapper.pl [OPTIONS]      -d <symbol> -alist <file with list of protein accessions>
-# dnaorg_fetch_cds_wrapper.pl [OPTIONS] -dna -d <symbol> -alist <file with list of nucleotide accessions>
-#	OPTIONS:
-#		-f         : force; if dir <symbol> exists, overwrite it
-#		-v         : be verbose; output commands to stdout as they're run
-#		-d <s>     : define output directory as <s>, not <symbol>
-#		-np        : determine number of matching protein accessions then exit
-#		-alist     : <symbol> is really a list of accessions, requires -d option too
-#		-up        : additional run experimental code for fetching non-CDS UniProt CDS via xrefs
-#		-dna       : -alist contains nucleotide accessions, not protein (requires -alist and -d)
-#		-old       : use extract_fasta_multi_exon instead of esl-fetch-cds.pl
-#
+##
+##dnaorg_fetch_dna_wrapper.pl:
+##
+## This script fetches DNA sequences from GenBank. It can be
+## run in three different modes:
+##
+## Mode 1: fetch CDS sequences for protein database records that link
+##         to a symbol for a protein coding gene in the Gene database,
+##         or if no matches exist in protein, repeat search in nuccore
+##         and fetch all nucleotide records that link to the noncoding
+##         symbol in the Gene database.
+##
+##   usage: 'perl dnaorg_fetch_dna_wrapper.pl [OPTIONS] <symbol>'
+##
+##
+## Mode 2: fetch CDS sequences for a list of protein accessions
+##
+##   usage: 'perl dnaorg_fetch_dna_wrapper.pl [OPTIONS] -d <name_for_outdir> -plist <file_with_list_of_protein_accessions>'
+##
+##
+## Mode 3: fetch nucleotide sequences for a list of nuccore accessions
+##
+##   usage: 'perl dnaorg_fetch_dna_wrapper.pl [OPTIONS] -d <name_for_outdir> -ntlist <file_with_list_of_nucleotide_accessions>'
+##
+##
+## BASIC OPTIONS:
+##  -f      : force; if dir <symbol> exists, overwrite it
+##  -v      : be verbose; output commands to stdout as they're run
+##  -d <s>  : define output directory as <s>, not <symbol>
+##  -nt     : search for matches to symbol in ONLY the nuccore db, not the protein db
+##  -notnt  : if zero matches for symbol in the protein db, DO NOT retry using the nuccore db
+##
+## OPTIONS THAT ENABLE ALTERNATE MODES:
+##  -plist  : <symbol> is really a list of protein accessions,    requires -d option too
+##  -ntlist : <symbol> is really a list of nucleotide accessions, requires -d option too
+##  -num    : determine number of matching protein/nucleotide accessions, then exit
+##
+## EXPERIMENTAL/ADVANCED OPTIONS:
+##  -up     : additional run experimental code for fetching non-CDS UniProt CDS via xrefs
+##  -old    : use extract_fasta_multi_exon instead of esl-fetch-cds.pl
+##
+##
+## This script will create a directory called <symbol> (for modes 1 and 2)
+## or called <name_for_outdir> (for modes 3 and 4) and populate it with
+## several output files, including:
+##
+##  <symbol>.log: list of all output files and brief descriptions
+##  <symbol>.cmd: list of all commands run by this script
+##  <symbol>.sum: copy of all stdout from this script
+##
+## For modes 2 and 3, the files will start with <name_for_outdir>
+## instead of <symbol>.
+##
 #############################
 # Example commands and output
 #############################
 # 
-#-------------------------------------------------------------------
-# mode A) fetch CDS sequences of proteins that link to a gene symbol
-#-------------------------------------------------------------------
+# Example 1: fetch CDS sequences of proteins that link to a gene symbol:
+# 
+# COMMAND:
 dnaorg_fetch_dna_wrapper.pl smn1
 #
-# This will create a directory called 'smn1' and populate it with
-# about 30 files. Many of these will be empty, and are only created to
-# check for errors or unexpected results. The output of the example
-# command and descriptions of several of the important files are
-# below. 
-# 
-# What the script actually does:
-# Stage 1: Fetches CDS sequences for the given <symbol>.
-#   Step 1.1: Fetches all protein accessions that match a query to our symbol 
-#   Step 1.2: Determines the CDS sequences/coordinates that correspond to the proteins from 1.1
-#   Step 1.3: Converts the extract_fasta_multi_exon input file to idfetch input format.
-#   Step 1.4: Extract the sequences using esl-fetch-cds.pl (or extract_fasta_multi_exon if -old)
-#
-# Stage 2: Validation of Stage 1 results
-#   Step 2.1: Validate all accessions have proteins
-#   Step 2.2: Validate all accessions have a locus
-#   Step 2.3: Validate we've fetched sequences for all proteins that have a CDS
-#   Step 2.4: Validate we haven't fetched any sequences for proteins that do not have a CDS
-#   Step 2.5: Validate we can explain all proteins that don't have a CDS
-# 
-# Throughout these stages, many files are compared to make sure their
-# differences are expected. If they're unexpected, the script dies in 
-# error.
-# 
 # OUTPUT (each line has been prefixed with a '#'):
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ## - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-## dnaorg_fetch_cds_wrapper.pl: Fetch CDS sequences for a given protein gene symbol
+## dnaorg_fetch_dna_wrapper.pl: Fetch DNA sequences from GenBank
 ## - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-## command: ./dnaorg_fetch_dna_wrapper.pl smn1
-## date:    Thu Apr 16 09:31:48 2015
+## command: ./dnaorg_fetch_dna_wrapper.pl -f smn1
+## date:    Mon Apr 20 13:47:26 2015
+## option:  forcing overwrite of smn1 dir/file [-f]
 ## symbol:  smn1
 ##
-## Stage 1: preparing and fetching CDS sequences
+## Stage 1: preparing and fetching sequences
 ##
-## description                                                          # output      # lost   # created     seconds  output-file-name
-##------------------------------------------------------------------  ----------  ----------  ----------  ----------  -----------------
-#Protein accessions fetched from protein database                            155           0         155         4.5  smn1/smn1.all.acc
-#Non-suppressed protein accessions fetched from protein database             155           0           0        16.0  smn1/smn1.acc
-#Protein accessions that have CDS annotation                                 145          10           0         8.0  smn1/smn1.efa
-#CDS sequences in FASTA format                                               145           0           0        54.6  smn1/smn1.fa
+## description                                                               # output      # lost   # created     seconds  output-file-name
+##-----------------------------------------------------------------------  ----------  ----------  ----------  ----------  -----------------
+#Protein_accessions_fetched_from_protein_database                                 155           0         155         4.1  smn1/smn1.all.acc
+#Non-suppressed_protein_accessions_fetched_from_protein_database                  155           0           0        10.5  smn1/smn1.acc
+#Protein_accessions_that_have_CDS_annotation                                      145          10           0         9.3  smn1/smn1.efa
+#CDS_sequences_in_FASTA_format                                                    145           0           0        51.1  smn1/smn1.fa
 ##
 ## Stage 2: validating stage 1 results
 ##
-## description                                                          # output      # lost   # created     seconds  output-file-name
-##------------------------------------------------------------------  ----------  ----------  ----------  ----------  -----------------
-#Validating that all accessions have a corresponding protein                 155           0           0        59.0  smn1/smn1.exists
-#Validating that all accessions have a corresponding locus                   155           0           0         8.1  smn1/smn1.lexists
-#Validating that we fetched sequences for all proteins with a CDS            145           0           0         7.8  smn1/smn1.has_cds
-#Validating that no seqs were fetched for any proteins w/o a CDS              10           0           0         7.1  smn1/smn1.no_cds
-#Validating that proteins w/o CDS are explainable (type A, B or C)            10           0           0         0.1  smn1/smn1.no_cds_type_a_b_c
+## description                                                               # output      # lost   # created     seconds  output-file-name
+##-----------------------------------------------------------------------  ----------  ----------  ----------  ----------  -----------------
+#Validating_that_all_accessions_have_a_corresponding_protein_record               155           0           0        54.9  smn1/smn1.exists
+#Validating_that_all_accessions_have_a_corresponding_locus                        155           0           0         6.0  smn1/smn1.lexists
+#Validating_that_we_fetched_sequences_for_all_proteins_with_a_CDS                 145           0           0         9.3  smn1/smn1.has_cds
+#Validating_that_no_seqs_were_fetched_for_any_proteins_without_a_CDS               10           0           0        10.7  smn1/smn1.no_cds
+#Validating_that_proteins_without_CDS_are_explainable_(type_A,_B_or_C)             10           0           0         0.1  smn1/smn1.no_cds_type_a_b_c
 ##
 ## Output files created by this script with brief descriptions listed in log file:  smn1/smn1.log
 ## This output printed to stdout written to summary file:                           smn1/smn1.sum
 ## All commands executed by this script listed in cmd file:                         smn1/smn1.cmd
 ## All output files created in directory:                                           ./smn1/
-## Total seconds elapsed:                                                           111.1
+## Total seconds elapsed:                                                           105.3
 ##
+## Type of records: protein
 ##[ok]
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 # Explanation of columns:
@@ -135,10 +156,143 @@ dnaorg_fetch_dna_wrapper.pl smn1
 # 'seconds':   seconds to complete this step
 # 'output-file-name': output file created by this step.
 # 
-#-------------------------------------------------------------------
-# mode B) HERE HERE HERE
-#-------------------------------------------------------------------
+# -------------------------------
+# Example 2: fetch nucleotide sequences of DNA sequences that link to a noncoding gene symbol:
+# COMMAND: 
+#           
+dnaorg_fetch_dna_wrapper.pl SNORA71D
 #
+# Note: alternatively the -nt option could be used to specify that only the 
+# nuccore database be searched.
+#
+# OUTPUT (each line has been prefixed with a '#'):
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+## - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+## dnaorg_fetch_dna_wrapper.pl: Fetch DNA sequences from GenBank
+## - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+## command: ./dnaorg_fetch_dna_wrapper.pl -f SNORA71D
+## date:    Mon Apr 20 13:51:10 2015
+## option:  forcing overwrite of SNORA71D dir/file [-f]
+## symbol:  SNORA71D
+##
+## Stage 1: preparing and fetching sequences
+##
+## description                                                                   # output      # lost   # created     seconds  output-file-name
+##---------------------------------------------------------------------------  ----------  ----------  ----------  ----------  -----------------
+#Protein_accessions_fetched_from_protein_database                                       0           0           0         0.9  SNORA71D/SNORA71D.all.acc
+#Nucleotide_accessions_fetched_from_nuccore_database                                    5           0           5         2.1  SNORA71D/SNORA71D.all.acc
+#Non-suppressed_nucleotide_accessions_fetched_from_nuccore_database                     5           0           0         1.2  SNORA71D/SNORA71D.acc
+#Nucleotide_sequences_in_FASTA_format                                                   5           0           0       135.3  SNORA71D/SNORA71D.fa
+##
+## Stage 2: validating stage 1 results
+##
+## description                                                                   # output      # lost   # created     seconds  output-file-name
+##---------------------------------------------------------------------------  ----------  ----------  ----------  ----------  -----------------
+#Validating_that_all_accessions_have_a_corresponding_DNA_record                         5           0           0       137.3  SNORA71D/SNORA71D.exists
+#Validating_that_all_accessions_have_a_corresponding_locus                              5           0           0         3.0  SNORA71D/SNORA71D.lexists
+##
+## Output files created by this script with brief descriptions listed in log file:  SNORA71D/SNORA71D.log
+## This output printed to stdout written to summary file:                           SNORA71D/SNORA71D.sum
+## All commands executed by this script listed in cmd file:                         SNORA71D/SNORA71D.cmd
+## All output files created in directory:                                           ./SNORA71D/
+## Total seconds elapsed:                                                           147.4
+##
+## Type of records: nucleotide
+##[ok]
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#
+# Note that there are only two files created for the validation stage.
+# Currently, there are fewer validation steps performed for nucleotide
+# sequences. The other protein validation steps do not apply to 
+# nucleotide sequences.
+#
+# -------------------------------
+# Example 3: fetch a list of protein accessions using the --plist option:
+#
+# COMMAND:
+dnaorg_fetch_dna_wrapper.pl -d samp5 -plist samp5.list
+#
+# OUTPUT (each line prefixed with a '#'):
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+## - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+## dnaorg_fetch_dna_wrapper.pl: Fetch DNA sequences from GenBank
+## - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+## command: ./dnaorg_fetch_dna_wrapper.pl -d samp5 -plist samp5
+## date:    Mon Apr 20 14:04:09 2015
+## option:  output directory specified as samp5 [-d]
+## option:  samp5.list is a list of protein accessions, not a symbol [-plist]
+##
+## Stage 1: preparing and fetching sequences
+##
+## description                                                                # output      # lost   # created     seconds  output-file-name
+##------------------------------------------------------------------------  ----------  ----------  ----------  ----------  -----------------
+#Sorted_accessions_from_file_samp5.list                                              5           0           5         0.0  samp5/samp5.all.acc
+#Non-suppressed_protein_accessions_fetched_from_protein_database                     5           0           0         1.3  samp5/samp5.acc
+#Protein_accessions_that_have_CDS_annotation                                         5           0           0         3.2  samp5/samp5.efa
+#CDS_sequences_in_FASTA_format                                                       5           0           0         6.5  samp5/samp5.fa
+##
+## Stage 2: validating stage 1 results
+##
+## description                                                                # output      # lost   # created     seconds  output-file-name
+##------------------------------------------------------------------------  ----------  ----------  ----------  ----------  -----------------
+#Validating_that_all_accessions_have_a_corresponding_protein_record                  5           0           0         8.5  samp5/samp5.exists
+#Validating_that_all_accessions_have_a_corresponding_locus                           5           0           0         3.4  samp5/samp5.lexists
+#Validating_that_we_fetched_sequences_for_all_proteins_with_a_CDS                    5           0           0         3.2  samp5/samp5.has_cds
+#Validating_that_no_seqs_were_fetched_for_any_proteins_without_a_CDS                 0           0           0         3.2  samp5/samp5.no_cds
+#Validating_that_proteins_without_CDS_are_explainable_(type_A,_B_or_C)               0           0           0         0.1  samp5/samp5.no_cds_type_a_b_c
+##
+## Output files created by this script with brief descriptions listed in log file:  samp5/samp5.log
+## This output printed to stdout written to summary file:                           samp5/samp5.sum
+## All commands executed by this script listed in cmd file:                         samp5/samp5.cmd
+## All output files created in directory:                                           ./samp5/
+## Total seconds elapsed:                                                           23.1
+##
+## Type of records: protein
+##[ok]
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#
+# This example could be repeated with a file listing nucleotide
+# accessions instead of protein accessions with the use of the -ntfile
+# option instead of -pfile.
+#
+# -------------------------------
+# Example 4: fetch only the number of sequences that match, not 
+#            the sequences themselves:
+#
+# COMMAND:
+dnaorg_fetch_dna_wrapper.pl -num SNORA71D
+#
+# OUTPUT (each line prefixed with a '#'):
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+## - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+## dnaorg_fetch_dna_wrapper.pl: Fetch DNA sequences from GenBank
+## - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+## command: ./dnaorg_fetch_dna_wrapper.pl -f -num SNORA71D
+## date:    Mon Apr 20 14:14:25 2015
+## option:  forcing overwrite of SNORA71D dir/file [-f]
+## option:  determining number of matching protein accessions, then exiting [-num]
+## symbol:  SNORA71D
+##
+## Special mode (-num): determining number of matching protein accessions, then exiting.
+##
+## description                                                                   # output      # lost   # created     seconds  output-file-name
+##---------------------------------------------------------------------------  ----------  ----------  ----------  ----------  -----------------
+#Protein_accessions_fetched_from_protein_database                                       0           0           0         0.7  SNORA71D/SNORA71D.all.acc
+#Nucleotide_accessions_fetched_from_nuccore_database                                    5           0           5         2.0  SNORA71D/SNORA71D.all.acc
+#Non-suppressed_nucleotide_accessions_fetched_from_nuccore_database                     5           0           0         0.3  SNORA71D/SNORA71D.acc
+##
+#Number_of_nucleotide_records: 5
+##
+## Output files created by this script with brief descriptions listed in log file:  SNORA71D/SNORA71D.log
+## This output printed to stdout written to summary file:                           SNORA71D/SNORA71D.sum
+## All commands executed by this script listed in cmd file:                         SNORA71D/SNORA71D.cmd
+## All output files created in directory:                                           ./SNORA71D/
+## Total seconds elapsed:                                                           3.0
+##
+## Type of records: nucleotide
+##[ok]
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
 ##############
 # Output files
 ##############
@@ -165,46 +319,6 @@ dnaorg_fetch_dna_wrapper.pl smn1
 # 
 # For complete list with descriptions see <symbol>.log.
 # 
-#
-######################################
-# Special (alternative) running modes:
-######################################
-#
-# -np option: determine number of matching protein accessions then exit.
-# 
-# Example:
-#
-# $ dnaorg_fetch_cds_wrapper.pl -np -f BCAR4
-## - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-## dnaorg_fetch_cds_wrapper.pl: Fetch CDS sequences for a given protein gene symbol
-## - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-## command: ./dnaorg_fetch_cds_wrapper.pl -f -np BCAR4
-## date:    Mon Mar 30 10:28:02 2015
-## option:  forcing overwrite of BCAR4 dir/file [-f]
-## option:  determining number of matching protein accessions, then exiting
-## symbol:  BCAR4
-##
-## Special mode (-np): determining number of matching protein accessions, then exiting.
-##
-## description                                                           # output      # lost   # created     seconds  output-file-name
-##-------------------------------------------------------------------  ----------  ----------  ----------  ----------  -----------------
-#Protein accessions fetched from protein database                               5           0           5         2.3  BCAR4/BCAR4.acc
-##
-#Number-of-proteins: 5
-##
-## Output files created by this script with brief descriptions listed in log file:  BCAR4/BCAR4.log
-## This output printed to stdout written to summary file:                           BCAR4/BCAR4.sum
-## All commands executed by this script listed in cmd file:                         BCAR4/BCAR4.cmd
-## All output files created in directory:                                           ./BCAR4/
-## Total seconds elapsed:                                                           2.3
-##
-##[ok]
-#
-# For single token output that gives number of protein accessions and
-# cleans up all created files:
-#
-# $ dnaorg_fetch_cds_wrapper.pl -d tmp -np -f BCAR4 | grep ^N | awk '{ print $2 }'; rm -rf tmp 
-# 5
 #
 ######################
 # Programs called by dnaorg_fetch_cds_wrapper.pl
@@ -311,9 +425,21 @@ dnaorg_fetch_dna_wrapper.pl smn1
 # NONE
 #
 #############################################
-# Last updated: EPN, Mon Mar 30 10:30:09 2015
+# Last updated: EPN, Mon Apr 20 14:23:40 2015
 #############################################
-# Log of changes
+# Log of changes for previous version:
+# (dnaorg_fetch_cds_wrapper.pl)
+#############################################
+# EPN, Mon Apr 13 10:04:16 2015
+#
+# - Modification to Apr 10 update, dead
+#   and withdrawn accessions are also 
+#   removed in addition to 'suppressed' ones.
+#
+#  xref: /panfs/pan1/dnaorg/programs/15_0310_dnaorg_fetch_cds_wrapper/00LOG.txt
+#
+# previous version: ./bkups/15_0413-1-before-update/
+# updated  version: ./bkups/15_0413-2-after-update/
 #############################################
 # EPN, Mon Apr 13 10:04:16 2015
 #
