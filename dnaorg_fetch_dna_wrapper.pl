@@ -35,39 +35,64 @@ my $start_secs = ($seconds + ($microseconds / 1000000.));
 my $executable = $0;
 
 # initialize variables that can be changed with cmdline options
-my $do_force   = 0;     # set to '1' with -f, overwrite output dir if it exists
-my $be_verbose = 0;     # set to '1' with -v, output commands as they're run to stdout
-my $out_dir    = undef; # set to a value <s> with -d <s>
-my $do_old     = 0;     # set to '1' with -old
+my $do_force        = 0;     # set to '1' with -f, overwrite output dir if it exists
+my $be_verbose      = 0;     # set to '1' with -v, output commands as they're run to stdout
+my $out_dir         = undef; # set to a value <s> with -d <s>
+my $do_uniprot_xref = 0;     # set to '1' if -up option used.
+my $do_nt_userset   = 0;     # set to '1' if -nt option is used
+my $do_nt           = 0;     # set to '1' if EITHER -nt used or we switch to searching in nuccore mid-script
+my $do_try_nt       = 0;     # set to '1' if -trynt option is used
+my $do_old          = 0;     # set to '1' with -old
+
+# variables that are indirectly changed by cmdline options
+my $acclist_file    = undef; # if -plist or -ntlist is used, this is defined as $symbol
+my $do_acclist_mode = 0;     # set to '1' if either -plist or -ntlist used
+
 # different 'modes', if all are false we run in default mode
-my $do_num_proteins_mode = 0;     # set to '1' if -np option used.
-my $do_acclist_mode      = 0;     # set to '1' if -alist option used.
-my $do_uniprot_xref      = 0;     # set to '1' if -up option used.
-my $do_dna               = 0;     # set to '1' if -dna option is used
-my $acclist_file         = undef; # if -alist is used, this is defined as $symbol
+my $do_num_mode      = 0; # set to '1' if -numonly option used.
+my $do_plist_mode    = 0; # set to '1' if -plist option used.
+my $do_ntlist_mode   = 0; # set to '1' if -ntlist option used.
+
 
 &GetOptions( "f"       => \$do_force, 
              "v"       => \$be_verbose,
              "d=s"     => \$out_dir,
-             "np"      => \$do_num_proteins_mode,
-             "alist"   => \$do_acclist_mode,
+             "nt"      => \$do_nt_userset,
+             "trynt"   => \$do_try_nt,
+             "plist"   => \$do_plist_mode,
+             "ntlist"  => \$do_ntlist_mode,
+             "num"     => \$do_num_mode,
              "up"      => \$do_uniprot_xref,
-             "dna"     => \$do_dna,
              "old"     => \$do_old);
 
 my $usage;
-$usage  = "dnaorg_fetch_dna_wrapper.pl [OPTIONS] <symbol (from GENE database, e.g. 'infB'>\n";
-$usage .= "dnaorg_fetch_dna_wrapper.pl [OPTIONS]      -d <symbol> -alist <file with list of protein accessions>\n";
-$usage .= "dnaorg_fetch_dna_wrapper.pl [OPTIONS] -dna -d <symbol> -alist <file with list of nucleotide accessions>\n";
-$usage .= "\tOPTIONS:\n";
-$usage .= "\t\t-f         : force; if dir <symbol> exists, overwrite it\n";
-$usage .= "\t\t-v         : be verbose; output commands to stdout as they're run\n";
-$usage .= "\t\t-d <s>     : define output directory as <s>, not <symbol>\n";
-$usage .= "\t\t-np        : determine number of matching protein accessions then exit\n";
-$usage .= "\t\t-alist     : <symbol> is really a list of accessions, requires -d option too\n";
-$usage .= "\t\t-up        : additional run experimental code for fetching non-CDS UniProt CDS via xrefs\n";
-$usage .= "\t\t-dna       : -alist contains nucleotide accessions, not protein (requires -alist and -d)\n";
-$usage .= "\t\t-old       : use extract_fasta_multi_exon instead of esl-fetch-cds.pl\n";
+$usage  = "Fetch CDS for matches to <symbol> in protein database:\n";
+$usage .= "  dnaorg_fetch_dna_wrapper.pl [OPTIONS] <symbol (from GENE database, e.g. 'infB'>\n\n";
+
+$usage  = "Fetch nucleotide matches to <symbol> in nuccore database:\n";
+$usage .= "  dnaorg_fetch_dna_wrapper.pl [OPTIONS] -nt <symbol (from GENE database, e.g. 'SNORA71D'>\n\n";
+
+$usage  = "Fetch CDS for protein accessions listed in <file>:\n";
+$usage .= "  dnaorg_fetch_dna_wrapper.pl [OPTIONS] -d <symbol> -plist  <file with list of protein accessions>\n\n";
+
+$usage  = "Fetch nucleotide accessions listed in <file>:\n";
+$usage .= "  dnaorg_fetch_dna_wrapper.pl [OPTIONS] -d <symbol> -ntlist <file with list of nuccore accessions>\n\n";
+
+$usage .= "\tBASIC OPTIONS:\n";
+$usage .= "\t\t-f      : force; if dir <symbol> exists, overwrite it\n";
+$usage .= "\t\t-v      : be verbose; output commands to stdout as they're run\n";
+$usage .= "\t\t-d <s>  : define output directory as <s>, not <symbol>\n";
+$usage .= "\t\t-nt     : search for matches to symbol in the nuccore db, not the protein db\n";
+$usage .= "\t\t-trynt  : if zero matches for symbol in the protein db, retry using the nuccore db\n";
+$usage .= "\n";
+$usage .= "\tOPTIONS THAT ENABLE ALTERNATE MODES:\n";
+$usage .= "\t\t-plist  : <symbol> is really a list of protein accessions,    requires -d option too\n";
+$usage .= "\t\t-ntlist : <symbol> is really a list of nucleotide accessions, requires -d option too\n";
+$usage .= "\t\t-num    : determine number of matching protein/nucleotide accessions, then exit\n";
+$usage .= "\n";
+$usage .= "\tEXPERIMENTAL/ADVANCED OPTIONS:\n";
+$usage .= "\t\t-up     : additional run experimental code for fetching non-CDS UniProt CDS via xrefs\n";
+$usage .= "\t\t-old    : use extract_fasta_multi_exon instead of esl-fetch-cds.pl\n";
 $usage .= "\n";
 
 if(scalar(@ARGV) != 1) { die $usage; }
@@ -88,21 +113,29 @@ if(defined $out_dir) {
   $opts_used_short .= "-d $out_dir ";
   $opts_used_long  .= "# option:  output directory specified as $out_dir [-d]\n"; 
 }
-if($do_num_proteins_mode) { 
-  $opts_used_short .= "-np ";
-  $opts_used_long  .= "# option:  determining number of matching protein accessions, then exiting\n"; 
+if($do_plist_mode) { 
+  $opts_used_short .= "-plist ";
+  $opts_used_long  .= "# option:  $symbol is a list of protein accessions, not a symbol [-plist]\n"; 
 }
-if($do_acclist_mode) { 
-  $opts_used_short .= "-alist ";
-  $opts_used_long  .= "# option:  $symbol is a list of accessions, not a symbol\n"; 
+if($do_nt_userset) { 
+  $opts_used_short .= "-nt ";
+  $opts_used_long  .= "# option:  search in the nuccore database, not in the protein db [-nt]\n";
+}
+if($do_try_nt) { 
+  $opts_used_short .= "-trynt ";
+  $opts_used_long  .= "# option:  if no matches in the protein database, try the nuccore database [-trynt]\n";
+}
+if($do_ntlist_mode) { 
+  $opts_used_short .= "-ntlist ";
+  $opts_used_long  .= "# option:  $symbol is a list of nucleotide accessions, not a symbol [-ntlist]\n"; 
+}
+if($do_num_mode) { 
+  $opts_used_short .= "-num ";
+  $opts_used_long  .= "# option:  determining number of matching protein accessions, then exiting [-num]\n"; 
 }
 if($do_uniprot_xref) { 
   $opts_used_short .= "-up ";
-  $opts_used_long  .= "# option:  trying to fetch non-CDS UniProt using xrefs\n";
-}
-if($do_dna) { 
-  $opts_used_short .= "-dna ";
-  $opts_used_long  .= "# option:  -alist contains nucleotide accessions, not protein\n";
+  $opts_used_long  .= "# option:  trying to fetch non-CDS UniProt using xrefs [-up]\n";
 }
 if($do_old) { 
   $opts_used_short .= "-old ";
@@ -110,20 +143,32 @@ if($do_old) {
 }
 
 # check for incompatible option combinations:
-if($do_acclist_mode) { 
+if($do_plist_mode || $do_ntlist_mode) { 
   if(! defined $out_dir) { 
-    die "ERROR the -alist option requires the -d option";
+    die "ERROR the -plist and -ntlist option requires the -d option";
   }
-  if($do_num_proteins_mode) { 
-    die "ERROR the -alist option is incompatible with -np";
+  if($do_nt_userset) { 
+    die "ERROR the -plist and -ntlist options are incompatible with -nt";
+  }
+  if($do_try_nt) { 
+    die "ERROR the -plist and -ntlist options are incompatible with -trynt";
+  }
+  if($do_num_mode) { 
+    die "ERROR the -plist and -ntlist options are incompatible with -num";
   }
 }
-if($do_dna) { 
-  if(! $do_acclist_mode) { 
-    die "ERROR the -dna option requires the -alist option";
-  }
+if($do_plist_mode && $do_ntlist_mode) { 
+  die "ERROR the -plist and -ntlist options are incompatible"; 
+}
+if($do_nt_userset && $do_try_nt) { 
+  die "ERROR the -nt and -trynt options are incompatible"; 
+}
+if($do_try_nt && $do_num_mode) { 
+  die "ERROR the -trynt and -num options are incompatible"; 
+}
+if($do_nt_userset) { 
   if($do_uniprot_xref) { 
-    die "ERROR the -dna option is incompatible with the -up option";
+    die "ERROR the -nt option is incompatible with the -up option";
   }
 }
 
@@ -131,15 +176,18 @@ my $exec_dir  = "/panfs/pan1/dnaorg/programs";
 my $idstat    = "/netopt/genbank/subtool/bin/idstat";
 my $fetch_cds = "$exec_dir/esl-fetch-cds.pl";
 my $idfetch   = "/netopt/ncbi_tools64/bin/idfetch";
-my $query;              # an argument to a '-query' option in a edirect tool cmdline
-my $cmd;                # a command to run with system() in RunCommand()
-my $desc;               # description of a step
-my $nlines;             # number of lines in a file
-my $nlost;              # number of lost elements (often accessions) in a step
-my $ncreated;           # number of created elements (often accessions) in a step, should always be 0
-my $descwidth = 80;     # width of description column
-my $nsecs;              # number of seconds a command took
-my $errmsg;             # error message
+my $query;          # an argument to a '-query' option in a edirect tool cmdline
+my $cmd;            # a command to run with system() in RunCommand()
+my $desc;           # description of a step
+my $nlines;         # number of lines in a file
+my $nlost;          # number of lost elements (often accessions) in a step
+my $ncreated;       # number of created elements (often accessions) in a step, should always be 0
+my $descwidth = 80; # width of description column
+my $nsecs;          # number of seconds a command took
+my $errmsg;         # error message
+
+$do_acclist_mode = ($do_plist_mode || $do_ntlist_mode) ? 1 : 0; # $do_acclist_mode is true if either -plist or -ntlist used
+$do_nt           = ($do_nt_userset) ? 1 : 0;
 
 ###############
 # Preliminaries
@@ -167,7 +215,6 @@ if($do_acclist_mode) {
   if(! -e $acclist_file) { die "ERROR no file $acclist_file exists"; }
   if(! -s $acclist_file) { die "ERROR file $acclist_file is empty"; }
 }
-
 
 # create the dir
 RunCommand("mkdir $out_dir", $be_verbose, undef);
@@ -204,16 +251,13 @@ PrintToStdoutAndFile("#\n", $sum_FH);
 
 
 #####################################################################
-# Stage 1: Fetch the CDS sequences (or nucleotide sequences if -dna).
+# Stage 1: Fetch the CDS sequences (or nucleotide sequences if -nt).
 #####################################################################
-if($do_num_proteins_mode) { 
-  PrintToStdoutAndFile("# Special mode (-np): determining number of matching protein accessions, then exiting.\n", $sum_FH);
-}
-elsif($do_dna) { 
-  PrintToStdoutAndFile("# Stage 1: preparing and fetching nucleotide sequences\n", $sum_FH);
+if($do_num_mode) { 
+  PrintToStdoutAndFile("# Special mode (-num): determining number of matching %s accessions, then exiting.\n", ($do_nt_userset) ? "nucleotide" : "protein", $sum_FH);
 }
 else { 
-  PrintToStdoutAndFile("# Stage 1: preparing and fetching CDS sequences\n", $sum_FH);
+  PrintToStdoutAndFile("# Stage 1: preparing and fetching sequences\n", $sum_FH);
 }
 PrintToStdoutAndFile("#\n", $sum_FH);
 # create column headers
@@ -227,40 +271,68 @@ PrintToStdoutAndFile(sprintf("%s  %10s  %10s  %10s  %10s  %s\n", $desc_dashes, "
 ###################################################################################
 # Step 1.1: 
 # if $do_alist: 
-#     if $do_dna: Fetch all nucleotide accessions listed in the accession file
+#     if $do_nt: Fetch all nucleotide accessions listed in the accession file
 #     else:       Fetch all protein    accessions listed in the accession file
 # else:           Fetch all protein    accessions that match a query to our symbol 
 ###################################################################################
 # TODO: experiment with different queries to pull in aliases/synonyms,
 # possibly with command line options. Also experiment with iterating 
 # this step to pull in more accessions.
+my $database        = undef; # set below
 my $allacc_file     = $out_dir . $symbol . ".all.acc";
 my $allacconly_file = $out_dir . $symbol . ".all.acconly";
+my $keep_going      = 1; # we set this to '0' after this step UNLESS 
+                         # $do_try_nt is TRUE and we find 0 protein accessions
+                         # in this step, in that case, we set $do_nt to TRUE
+                         # and retry the search in 'nuccore'.
 
-$query       = "\"$symbol [GENE]\"";
-if($do_acclist_mode) { 
-  $cmd         = "cat $acclist_file | sort > $allacc_file";
-  $desc        = "Sorted accessions from file $acclist_file";
-}
-else { # default (normal) case
-  $cmd         = "esearch -db protein -query $query | efetch -format acc | sort > $allacc_file";
-  $desc        = "Protein accessions fetched from protein database";
-}
-$nsecs       = RunCommand($cmd, $be_verbose, $cmd_FH);
-$nlines      = GetNumLinesInFile($allacc_file);
-OutputFileInfo($allacc_file, $desc, $cmd, $log_FH);
-
-$cmd    = "cat $allacc_file | sed 's/\\.[0-9]*//' > $allacconly_file";
-$nsecs += RunCommand($cmd, $be_verbose, $cmd_FH);
-
-$nlost       = 0;
-$ncreated    = $nlines;
-PrintToStdoutAndFile(sprintf("%-*s  %10d  %10d  %10d  %10.1f  %s\n", $desc_w, $desc, GetNumLinesInFile($allacc_file), $nlost, $ncreated, $nsecs, $allacc_file), $sum_FH);
-if($ncreated == 0) { # this is an okay result
-  PrintToStdoutAndFile("#\n", $sum_FH);
-  PrintToStdoutAndFile("# No accessions fetched. Exiting.\n", $sum_FH);
-  Conclude($start_secs, $sum_FH, $log_FH);
-  exit 0;
+while($keep_going) { 
+  $query = "\"$symbol [GENE]\"";
+  if($do_acclist_mode) { 
+    $cmd  = "cat $acclist_file | sort > $allacc_file";
+    $desc = "Sorted accessions from file $acclist_file";
+  }
+  elsif($do_nt) { 
+    $cmd  = "esearch -db nuccore -query $query | efetch -format acc | sort > $allacc_file";
+    $desc = "Nucleotide accessions fetched from nuccore database";
+  }
+  else { # default
+    $cmd  = "esearch -db protein -query $query | efetch -format acc | sort > $allacc_file";
+    $desc = "Protein accessions fetched from protein database";
+  }
+  $nsecs  = RunCommand($cmd, $be_verbose, $cmd_FH);
+  $nlines = GetNumLinesInFile($allacc_file);
+  OutputFileInfo($allacc_file, $desc, $cmd, $log_FH);
+  
+  $cmd    = "cat $allacc_file | sed 's/\\.[0-9]*//' > $allacconly_file";
+  $nsecs += RunCommand($cmd, $be_verbose, $cmd_FH);
+ 
+  $nlost       = 0;
+  $ncreated    = $nlines;
+  PrintToStdoutAndFile(sprintf("%-*s  %10d  %10d  %10d  %10.1f  %s\n", $desc_w, $desc, GetNumLinesInFile($allacc_file), $nlost, $ncreated, $nsecs, $allacc_file), $sum_FH);
+  if($ncreated == 0) { # this is an okay result
+    if((! $do_nt) && $do_try_nt) { # the one case in which we retry the query in nuccore
+      $do_nt      = 1;
+      $keep_going = 1; 
+    }
+    else { 
+      PrintToStdoutAndFile("#\n", $sum_FH);
+      if((! $do_nt_userset) && $do_nt) { 
+        PrintToStdoutAndFile("# No protein or nuccore accessions fetched.\n# Exiting.\n", $sum_FH);
+      }
+      elsif((! $do_nt_userset) && (! $do_acclist_mode)) { 
+        PrintToStdoutAndFile("# No protein accessions fetched.\n# Maybe it's a nucleotide symbol? Use -nt or -trynt to check.\n# Exiting.\n", $sum_FH);
+      }
+      else { 
+        PrintToStdoutAndFile("# No accessions fetched.\n# Exiting.\n", $sum_FH);
+      }        
+      Conclude($start_secs, $sum_FH, $log_FH);
+      exit 0;
+    }
+  }
+  else { # $ncreated > 0
+    $keep_going = 0;
+  }
 }
 # End of section TODO refers to
 
@@ -270,8 +342,8 @@ if($ncreated == 0) { # this is an okay result
 my $acc_file         = $out_dir . $symbol . ".acc";
 my $acc_file_lost    = $acc_file . ".lost";
 my $acc_file_created = $acc_file . ".created";
-if($do_dna) { $desc  = "Non-suppressed nucleotide accessions fetched from nuccore database"; }
-else        { $desc  = "Non-suppressed protein accessions fetched from protein database"; }
+if($do_nt) { $desc  = "Non-suppressed nucleotide accessions fetched from nuccore database"; }
+else       { $desc  = "Non-suppressed protein accessions fetched from protein database"; }
 my $idstat_file = $allacconly_file . ".idstat";
 $cmd = "$idstat -i PUBSEQ_OS -A $allacconly_file > $idstat_file";
 $nsecs = RunCommand($cmd, $be_verbose, $cmd_FH);
@@ -298,9 +370,14 @@ OutputFileInfo($acc_file_created, "Protein accessions ($ncreated) added by idsta
 PrintToStdoutAndFile(sprintf("%-*s  %10d  %10d  %10d  %10.1f  %s\n", $desc_w, $desc, GetNumLinesInFile($acc_file), $nlost, $ncreated, $nsecs, $acc_file), $sum_FH);
 if($errmsg ne "") { die $errmsg; }
 
-if($do_num_proteins_mode) { 
+if($do_num_mode) { 
   PrintToStdoutAndFile("#\n", $sum_FH);
-  PrintToStdoutAndFile("Number-of-proteins: $ncreated\n", $sum_FH);
+  if($do_nt) { 
+    PrintToStdoutAndFile("Number-of-nucleotide-records: $ncreated\n", $sum_FH);
+  }
+  else { 
+    PrintToStdoutAndFile("Number-of-protein-records: $ncreated\n", $sum_FH);
+  }    
   Conclude($start_secs, $sum_FH, $log_FH);
   exit 0;
 }
@@ -318,7 +395,7 @@ if(GetNumLinesInFile($acc_file) == 0) { # this is an okay result
 my $efa_file         = $out_dir . $symbol . ".efa";
 my $efa_file_lost    = $efa_file . ".lost";
 my $efa_file_created = $efa_file . ".created";
-if(! $do_dna) { 
+if(! $do_nt) { 
   $cmd = "cat $acc_file | epost -db protein -format acc | efetch -format gpc | xtract -insd CDS coded_by codon_start | grep . | sort ";
   if($do_old) { 
     $cmd .= " | $exec_dir/coded_by2extract_fasta_multi_exon.pl > $efa_file";
@@ -358,12 +435,12 @@ if(! $do_dna) {
 # output information on this step to stdout and sum file
   PrintToStdoutAndFile(sprintf("%-*s  %10d  %10d  %10d  %10.1f  %s\n", $desc_w, $desc, GetNumLinesInFile($efa_file), $nlost, $ncreated, $nsecs, $efa_file), $sum_FH);
   if($errmsg ne "") { die $errmsg; }
-} # end of 'if(! $do_dna)'
+} # end of 'if(! $do_nt)'
 
 #############################################################
 #EPN, Wed Mar 25 14:22:09 2015
 # Experimental code for fetching UniProt CDS sequences, currently only run if -up
-if($do_uniprot_xref) { # note: if this is true, then $do_dna must be false, we enforce it above
+if((! $do_nt) && $do_uniprot_xref) { 
 ################################
 # Try to fetch any uniprot sequences that we can 
   ($seconds, $microseconds) = gettimeofday();
@@ -554,7 +631,7 @@ if($do_uniprot_xref) { # note: if this is true, then $do_dna must be false, we e
 } # end of 'if($do_uniprot_xref)'
 # End of experimental code block for fetching UniProt CDS sequences, currently NOT run
 ################################
-
+    
 ####################################################################################
 # Step 1.4: Convert the extract_fasta_multi_exon input file to idfetch input format.
 # We need to do this because idfetch can't read from a pipe, if it could we 
@@ -576,7 +653,7 @@ my $fa_file         = $out_dir . $symbol . ".fa";
 my $fa_file_names   = $fa_file . ".names";
 my $fa_file_lost    = $fa_file . ".lost";
 my $fa_file_created = $fa_file . ".created";
-my $cds_or_nt       = ($do_dna) ? "nucleotide" : "CDS";
+my $cds_or_nt       = ($do_nt) ? "nucleotide" : "CDS";
 $desc  = "CDS sequences in FASTA format";
 
 # Preliminary step: we need a version of $acc_file that has version information removed
@@ -587,7 +664,7 @@ RunCommand($cmd, $be_verbose, $cmd_FH);
 if($do_old) { 
   $cmd = "$idfetch -t 5 -c 1 -G $idfetch_file | $exec_dir/id_fasta.pl | $exec_dir/extract_fasta_multi_exon $efa_file > $fa_file";
 }
-elsif($do_dna) { 
+elsif($do_nt) { 
   $cmd  = "$idfetch -t 5 -c 1 -G $acc_file | $exec_dir/id_fasta.pl > $fa_file";
   $desc = "nucleotide sequences in FASTA format";
 }
@@ -597,7 +674,7 @@ else { # normal case
 $nsecs = RunCommand($cmd, $be_verbose, $cmd_FH);
 OutputFileInfo($fa_file, $desc, $cmd, $log_FH);
 
-# get list of protein accessions we have CDS sequences (or just nucleotide sequences if $do_dna) for in fasta file
+# get list of protein accessions we have CDS sequences (or just nucleotide sequences if $do_nt) for in fasta file
 # we'll use this to make sure we fetched all of them
 if($do_old) { 
   $cmd = "grep ^\\> $fa_file | sed 's/^>//' | awk '{ print \$1 }' | sed 's/^.*\://' | sort | sed 's/\\.[0-9]*//' > $fa_file_names";
@@ -613,7 +690,7 @@ if($do_old) {
   $cmd = "awk '{ print \$NF }' $efa_file | sed 's/\\.[0-9]*//' | comm -2 -3 - $fa_file_names > $fa_file_lost";
 }
 else { 
-  if($do_dna) { $cmd = "comm -2 -3 $acconly_file $fa_file_names > $fa_file_lost"; }
+  if($do_nt) { $cmd = "comm -2 -3 $acconly_file $fa_file_names > $fa_file_lost"; }
   else        { $cmd = "awk '{ print \$1 }' $efa_file | sed 's/\\.[0-9]*//' | comm -2 -3 - $fa_file_names > $fa_file_lost"; }
 }
 RunCommand($cmd, $be_verbose, $log_FH);
@@ -624,7 +701,7 @@ if($do_old) {
   $cmd = "awk '{ print \$NF }' $efa_file | sed 's/\\.[0-9]*//' | comm -2 -3 $fa_file_names - > $fa_file_created";
 }
 else { 
-  if($do_dna) { $cmd = "comm -2 -3 $fa_file_names $acconly_file > $fa_file_created"; }
+  if($do_nt) { $cmd = "comm -2 -3 $fa_file_names $acconly_file > $fa_file_created"; }
   else        { $cmd = "awk '{ print \$1 }' $efa_file | sed 's/\\.[0-9]*//' | comm -2 -3 $fa_file_names - > $fa_file_created"; }
 }
 RunCommand($cmd, $be_verbose, $log_FH);
@@ -649,7 +726,7 @@ PrintToStdoutAndFile(sprintf("%s  %10s  %10s  %10s  %10s  %s\n", $desc_dashes, "
 
 # For step 2.4 we need a de-versioned $efa_file_lost
 my $efa_file_lost_acconly = $efa_file_lost . ".acconly"; # same as $efa_file_lost but with version info removed
-if(! $do_dna) { 
+if(! $do_nt) { 
   $cmd  = "cat $efa_file_lost | sed 's/\\.[0-9]*//' > $efa_file_lost_acconly";
   RunCommand($cmd, $be_verbose, $cmd_FH);
 }
@@ -660,9 +737,9 @@ if(! $do_dna) {
 my $exists_file         = $out_dir . $symbol . ".exists";
 my $exists_file_lost    = $exists_file . ".lost";
 my $exists_file_created = $exists_file . ".created";
-my $db             = ($do_dna) ? "nuccore" : "protein";
-my $protein_or_dna = ($do_dna) ? "DNA" : "protein";
-$desc = "Validating that all accessions have a corresponding $protein_or_dna";
+my $db             = ($do_nt) ? "nuccore" : "protein";
+my $protein_or_dna = ($do_nt) ? "DNA" : "protein";
+$desc = "Validating that all accessions have a corresponding $protein_or_dna record";
 $cmd  = "cat $acc_file | epost -db $db -format acc | efetch -format acc | sed 's/\\.[0-9]*//' | sort > $exists_file";
 $nsecs += RunCommand($cmd, $be_verbose, $cmd_FH);
 OutputFileInfo($exists_file, $desc, $cmd, $log_FH);
@@ -729,7 +806,7 @@ if($errmsg ne "") { die $errmsg; }
 my $has_cds_file         = $out_dir . $symbol . ".has_cds";
 my $has_cds_file_lost    = $has_cds_file . ".lost";
 my $has_cds_file_created = $has_cds_file . ".created";
-if(! $do_dna) { 
+if(! $do_nt) { 
   $desc = "Validating that we fetched sequences for all proteins with a CDS";
   $cmd  = "cat $exists_file | epost -db protein -format acc | efetch -format gpc | xtract -pattern INSDSeq -ACCN INSDSeq_accession-version -group INSDSeq_feature-table -match INSDFeature_key:CDS -element \"&ACCN\" | sort | sed 's/\\.[0-9]*//' > $has_cds_file";
   $nsecs = RunCommand($cmd, $be_verbose, $cmd_FH);
@@ -755,7 +832,7 @@ if(! $do_dna) {
   # output information on this step to stdout and sum file
   PrintToStdoutAndFile(sprintf("%-*s  %10d  %10d  %10d  %10.1f  %s\n", $desc_w, $desc, GetNumLinesInFile($has_cds_file), $nlost, $ncreated, $nsecs, $has_cds_file), $sum_FH);
   if($errmsg ne "") { die $errmsg; }
-} # end of 'if($do_dna)'
+} # end of 'if($do_nt)'
 
 #########################################################################################
 # Step 2.4: Validate we haven't fetched any sequences for proteins that do not have a CDS
@@ -763,7 +840,7 @@ if(! $do_dna) {
 my $no_cds_file         = $out_dir . $symbol . ".no_cds";
 my $no_cds_file_lost    = $no_cds_file . ".lost";
 my $no_cds_file_created = $no_cds_file . ".created";
-if(! $do_dna) { 
+if(! $do_nt) { 
   $desc = "Validating that no seqs were fetched for any proteins w/o a CDS";
   # same command as step 2.3 with 'avoid' replacing 'match'
   $cmd  = "cat $exists_file | epost -db protein -format acc | efetch -format gpc | xtract -pattern INSDSeq -ACCN INSDSeq_accession-version -group INSDSeq_feature-table -avoid INSDFeature_key:CDS -element \"&ACCN\" | sort | sed 's/\\.[0-9]*//' > $no_cds_file";
@@ -790,7 +867,7 @@ if(! $do_dna) {
   # output information on this step to stdout and sum file
   PrintToStdoutAndFile(sprintf("%-*s  %10d  %10d  %10d  %10.1f  %s\n", $desc_w, $desc, GetNumLinesInFile($no_cds_file), $nlost, $ncreated, $nsecs, $no_cds_file), $sum_FH);
   if($errmsg ne "") { die $errmsg; }
-} # end of 'if(! $do_dna)'
+} # end of 'if(! $do_nt)'
 
 
 ######################################################################
@@ -807,7 +884,7 @@ my $no_cds_type_a_b_c_file     = $out_dir . $symbol . ".no_cds_type_a_b_c";     
 my $no_cds_type_file_lost      = $out_dir . $symbol . ".no_cds_type.lost";        # accessions that are not type A, B, or C
 my $no_cds_type_file_created   = $out_dir . $symbol . ".no_cds_type.created";     # accessions somehow created in this step
 
-if(! $do_dna) { 
+if(! $do_nt) { 
   ($seconds, $microseconds) = gettimeofday(); # so we can time this step
   my $step_start_secs = ($seconds + ($microseconds / 1000000.));
   
