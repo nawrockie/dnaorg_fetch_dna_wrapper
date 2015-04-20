@@ -95,19 +95,6 @@ my $do_ntlist_mode   = 0; # set to '1' if -ntlist option used.
              "up"      => \$do_uniprot_xref,
              "old"     => \$do_old);
 
-#my $usage;
-#$usage  = "Fetch CDS for matches to <symbol> in protein database:\n";
-#$usage .= "  dnaorg_fetch_dna_wrapper.pl [OPTIONS] <symbol (from GENE database, e.g. 'infB'>\n\n";
-
-#$usage  = "Fetch nucleotide matches to <symbol> in nuccore database:\n";
-#$usage .= "  dnaorg_fetch_dna_wrapper.pl [OPTIONS] -nt <symbol (from GENE database, e.g. 'SNORA71D'>\n\n";
-
-#$usage  = "Fetch CDS for protein accessions listed in <file>:\n";
-#$usage .= "  dnaorg_fetch_dna_wrapper.pl [OPTIONS] -d <name for out dir> -plist  <file with list of protein accessions>\n\n";
-
-#$usage  = "Fetch nucleotide accessions listed in <file>:\n";
-#$usage .= "  dnaorg_fetch_dna_wrapper.pl [OPTIONS] -d <name for out dir> -ntlist <file with list of nuccore accessions>\n\n";
-
 
 if(scalar(@ARGV) != 1) { die $usage; }
 my ($symbol) = (@ARGV);
@@ -261,9 +248,9 @@ if(! $do_acclist_mode) {
 PrintToStdoutAndFile("#\n", $sum_FH);
 
 
-#####################################################################
-# Stage 1: Fetch the CDS sequences (or nucleotide sequences if -nt).
-#####################################################################
+##############################
+# Stage 1: Fetch the sequences
+##############################
 if($do_num_mode) { 
   PrintToStdoutAndFile("# Special mode (-num): determining number of matching %s accessions, then exiting.\n", ($do_nt_userset) ? "nucleotide" : "protein", $sum_FH);
 }
@@ -281,10 +268,11 @@ PrintToStdoutAndFile(sprintf("%s  %10s  %10s  %10s  %10s  %s\n", $desc_dashes, "
 
 ###################################################################################
 # Step 1.1: 
-# if $do_alist: 
-#     if $do_nt: Fetch all nucleotide accessions listed in the accession file
-#     else:       Fetch all protein    accessions listed in the accession file
-# else:           Fetch all protein    accessions that match a query to our symbol 
+# Fetch all accessions that match a query to our symbol in the Gene DB. First
+# try the protein database, if 0 hits, then try the nuccore database.
+# UNLESS:
+# if $do_plist:  Fetch all protein    accessions listed in the accession file
+# if $do_ntlist: Fetch all nucleotide accessions listed in the accession file
 ###################################################################################
 # TODO: experiment with different queries to pull in aliases/synonyms,
 # possibly with command line options. Also experiment with iterating 
