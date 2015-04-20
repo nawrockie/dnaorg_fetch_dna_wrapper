@@ -1,36 +1,64 @@
 #!/usr/bin/env perl
 # EPN, Fri Mar 13 14:17:55 2015
-# dnaorg_fetch_dna_wrapper.pl: fetch sequences from GenBank
-# 
-# This script can be used to fetch CDS sequences of proteins
-# that link to a specific Gene database symbol, or to fetch
-# sequences for which the accessions are listed in a file.
-# In the latter case the accessions can either be protein,
-# in which case the CDSs will be fetched, or DNA (requiring
-# the -dna option).
-# 
-# TEST!
-#
-# usage: perl dnaorg_fetch_dna_wrapper.pl <symbol>
-#   OR 
-# usage: perl dnaorg_fetch_dna_wrapper.pl -d <symbol> -alist <file with list of protein accessions>
-#   OR
-# usage: perl dnaorg_fetch_dna_wrapper.pl -d <symbol> -dna -alist <file with list of nucleotide accessions>
-# 
-# In the first case (if -alist is not used) <symbol> should be from the Gene database.
-# Otherwise (if -alist is used) it can be anything and will serve only as the name
-# of the output directroy.
-#
-# Creates a directory called <symbol> and populates it with several output
-# files, including: 
-#  <symbol>.log: list of all output files and brief descriptions
-#  <symbol>.cmd: list of all commands run by this script
-#  <symbol>.sum: copy of all stdout from this script
 #
 use strict;
 use warnings;
 use Getopt::Long;
 use Time::HiRes qw(gettimeofday);
+
+# The definition of $usage explains the script and usage:
+my $usage = "\ndnaorg_fetch_dna_wrapper.pl:\n";
+$usage .= "\n"; 
+$usage .= " This script fetches DNA sequences from GenBank. It can be\n";
+$usage .= " run in three different modes:\n\n";
+
+$usage .= " Mode 1: fetch CDS sequences for protein database records that link\n";
+$usage .= "         to a symbol for a protein coding gene in the Gene database,\n";
+$usage .= "         or if no matches exist in protein, repeat search in nuccore\n";
+$usage .= "         and fetch all nucleotide records that link to the noncoding\n";
+$usage .= "         symbol in the Gene database.\n";
+$usage .= "\n";
+$usage .= "   usage: 'perl dnaorg_fetch_dna_wrapper.pl [OPTIONS] <symbol>'\n";
+$usage .= "\n";
+$usage .= "\n";
+$usage .= " Mode 2: fetch CDS sequences for a list of protein accessions\n";
+$usage .= "\n";
+$usage .= "   usage: 'perl dnaorg_fetch_dna_wrapper.pl [OPTIONS] -d <name_for_outdir> -plist <file_with_list_of_protein_accessions>'\n";
+$usage .= "\n";
+$usage .= "\n";
+$usage .= " Mode 3: fetch nucleotide sequences for a list of nuccore accessions\n";
+$usage .= "\n";
+$usage .= "   usage: 'perl dnaorg_fetch_dna_wrapper.pl [OPTIONS] -d <name_for_outdir> -ntlist <file_with_list_of_nucleotide_accessions>'\n";
+$usage .= "\n";
+$usage .= "\n";
+$usage .= " BASIC OPTIONS:\n";
+$usage .= "  -f      : force; if dir <symbol> exists, overwrite it\n";
+$usage .= "  -v      : be verbose; output commands to stdout as they're run\n";
+$usage .= "  -d <s>  : define output directory as <s>, not <symbol>\n";
+$usage .= "  -nt     : search for matches to symbol in ONLY the nuccore db, not the protein db\n";
+$usage .= "  -notnt  : if zero matches for symbol in the protein db, DO NOT retry using the nuccore db\n";
+$usage .= "\n";
+$usage .= " OPTIONS THAT ENABLE ALTERNATE MODES:\n";
+$usage .= "  -plist  : <symbol> is really a list of protein accessions,    requires -d option too\n";
+$usage .= "  -ntlist : <symbol> is really a list of nucleotide accessions, requires -d option too\n";
+$usage .= "  -num    : determine number of matching protein/nucleotide accessions, then exit\n";
+$usage .= "\n";
+$usage .= " EXPERIMENTAL/ADVANCED OPTIONS:\n";
+$usage .= "  -up     : additional run experimental code for fetching non-CDS UniProt CDS via xrefs\n";
+$usage .= "  -old    : use extract_fasta_multi_exon instead of esl-fetch-cds.pl\n";
+$usage .= "\n";
+$usage .= "\n";
+$usage .= " This script will create a directory called <symbol> (for modes 1 and 2)\n";
+$usage .= " or called <name_for_outdir> (for modes 3 and 4) and populate it with\n";
+$usage .= " several output files, including:\n";
+$usage .= "\n";
+$usage .= "  <symbol>.log: list of all output files and brief descriptions\n";
+$usage .= "  <symbol>.cmd: list of all commands run by this script\n";
+$usage .= "  <symbol>.sum: copy of all stdout from this script\n";
+$usage .= "\n";
+$usage .= " For modes 2 and 3, the files will start with <name_for_outdir>\n";
+$usage .= " instead of <symbol>.\n";
+$usage .= "\n";
 
 my ($seconds, $microseconds) = gettimeofday();
 my $start_secs = ($seconds + ($microseconds / 1000000.));
@@ -43,7 +71,7 @@ my $out_dir         = undef; # set to a value <s> with -d <s>
 my $do_uniprot_xref = 0;     # set to '1' if -up option used.
 my $do_nt_userset   = 0;     # set to '1' if -nt option is used
 my $do_nt           = 0;     # set to '1' if EITHER -nt used or we switch to searching in nuccore mid-script
-my $do_try_nt       = 0;     # set to '1' if -trynt option is used
+my $do_not_try_nt   = 0;     # set to '1' if -notnt option is used
 my $do_old          = 0;     # set to '1' with -old
 
 # variables that are indirectly changed by cmdline options
@@ -60,42 +88,26 @@ my $do_ntlist_mode   = 0; # set to '1' if -ntlist option used.
              "v"       => \$be_verbose,
              "d=s"     => \$out_dir,
              "nt"      => \$do_nt_userset,
-             "trynt"   => \$do_try_nt,
+             "notnt"   => \$do_not_try_nt,
              "plist"   => \$do_plist_mode,
              "ntlist"  => \$do_ntlist_mode,
              "num"     => \$do_num_mode,
              "up"      => \$do_uniprot_xref,
              "old"     => \$do_old);
 
-my $usage;
-$usage  = "Fetch CDS for matches to <symbol> in protein database:\n";
-$usage .= "  dnaorg_fetch_dna_wrapper.pl [OPTIONS] <symbol (from GENE database, e.g. 'infB'>\n\n";
+#my $usage;
+#$usage  = "Fetch CDS for matches to <symbol> in protein database:\n";
+#$usage .= "  dnaorg_fetch_dna_wrapper.pl [OPTIONS] <symbol (from GENE database, e.g. 'infB'>\n\n";
 
-$usage  = "Fetch nucleotide matches to <symbol> in nuccore database:\n";
-$usage .= "  dnaorg_fetch_dna_wrapper.pl [OPTIONS] -nt <symbol (from GENE database, e.g. 'SNORA71D'>\n\n";
+#$usage  = "Fetch nucleotide matches to <symbol> in nuccore database:\n";
+#$usage .= "  dnaorg_fetch_dna_wrapper.pl [OPTIONS] -nt <symbol (from GENE database, e.g. 'SNORA71D'>\n\n";
 
-$usage  = "Fetch CDS for protein accessions listed in <file>:\n";
-$usage .= "  dnaorg_fetch_dna_wrapper.pl [OPTIONS] -d <symbol> -plist  <file with list of protein accessions>\n\n";
+#$usage  = "Fetch CDS for protein accessions listed in <file>:\n";
+#$usage .= "  dnaorg_fetch_dna_wrapper.pl [OPTIONS] -d <name for out dir> -plist  <file with list of protein accessions>\n\n";
 
-$usage  = "Fetch nucleotide accessions listed in <file>:\n";
-$usage .= "  dnaorg_fetch_dna_wrapper.pl [OPTIONS] -d <symbol> -ntlist <file with list of nuccore accessions>\n\n";
+#$usage  = "Fetch nucleotide accessions listed in <file>:\n";
+#$usage .= "  dnaorg_fetch_dna_wrapper.pl [OPTIONS] -d <name for out dir> -ntlist <file with list of nuccore accessions>\n\n";
 
-$usage .= "\tBASIC OPTIONS:\n";
-$usage .= "\t\t-f      : force; if dir <symbol> exists, overwrite it\n";
-$usage .= "\t\t-v      : be verbose; output commands to stdout as they're run\n";
-$usage .= "\t\t-d <s>  : define output directory as <s>, not <symbol>\n";
-$usage .= "\t\t-nt     : search for matches to symbol in the nuccore db, not the protein db\n";
-$usage .= "\t\t-trynt  : if zero matches for symbol in the protein db, retry using the nuccore db\n";
-$usage .= "\n";
-$usage .= "\tOPTIONS THAT ENABLE ALTERNATE MODES:\n";
-$usage .= "\t\t-plist  : <symbol> is really a list of protein accessions,    requires -d option too\n";
-$usage .= "\t\t-ntlist : <symbol> is really a list of nucleotide accessions, requires -d option too\n";
-$usage .= "\t\t-num    : determine number of matching protein/nucleotide accessions, then exit\n";
-$usage .= "\n";
-$usage .= "\tEXPERIMENTAL/ADVANCED OPTIONS:\n";
-$usage .= "\t\t-up     : additional run experimental code for fetching non-CDS UniProt CDS via xrefs\n";
-$usage .= "\t\t-old    : use extract_fasta_multi_exon instead of esl-fetch-cds.pl\n";
-$usage .= "\n";
 
 if(scalar(@ARGV) != 1) { die $usage; }
 my ($symbol) = (@ARGV);
@@ -123,9 +135,9 @@ if($do_nt_userset) {
   $opts_used_short .= "-nt ";
   $opts_used_long  .= "# option:  search in the nuccore database, not in the protein db [-nt]\n";
 }
-if($do_try_nt) { 
-  $opts_used_short .= "-trynt ";
-  $opts_used_long  .= "# option:  if no matches in the protein database, try the nuccore database [-trynt]\n";
+if($do_not_try_nt) { 
+  $opts_used_short .= "-notnt ";
+  $opts_used_long  .= "# option:  if no matches in the protein database, DO NOT try the nuccore database [-notnt]\n";
 }
 if($do_ntlist_mode) { 
   $opts_used_short .= "-ntlist ";
@@ -152,8 +164,8 @@ if($do_plist_mode || $do_ntlist_mode) {
   if($do_nt_userset) { 
     die "ERROR the -plist and -ntlist options are incompatible with -nt";
   }
-  if($do_try_nt) { 
-    die "ERROR the -plist and -ntlist options are incompatible with -trynt";
+  if($do_not_try_nt) { 
+    die "ERROR the -plist and -ntlist options are incompatible with -notnt";
   }
   if($do_num_mode) { 
     die "ERROR the -plist and -ntlist options are incompatible with -num";
@@ -162,15 +174,12 @@ if($do_plist_mode || $do_ntlist_mode) {
 if($do_plist_mode && $do_ntlist_mode) { 
   die "ERROR the -plist and -ntlist options are incompatible"; 
 }
-if($do_nt_userset && $do_try_nt) { 
-  die "ERROR the -nt and -trynt options are incompatible"; 
-}
-if($do_try_nt && $do_num_mode) { 
-  die "ERROR the -trynt and -num options are incompatible"; 
-}
 if($do_nt_userset) { 
   if($do_uniprot_xref) { 
     die "ERROR the -nt option is incompatible with the -up option";
+  }
+  if($do_not_try_nt) { 
+    die "ERROR the -nt option is incompatible with the -notnt option";
   }
 }
 
@@ -284,7 +293,7 @@ my $database        = undef; # set below
 my $allacc_file     = $out_dir . $symbol . ".all.acc";
 my $allacconly_file = $out_dir . $symbol . ".all.acconly";
 my $keep_going      = 1; # we set this to '0' after this step UNLESS 
-                         # $do_try_nt is TRUE and we find 0 protein accessions
+                         # $do_not_try_nt is FALSE and we find 0 protein accessions
                          # in this step, in that case, we set $do_nt to TRUE
                          # and retry the search in 'nuccore'.
 
@@ -313,7 +322,7 @@ while($keep_going) {
   $ncreated    = $nlines;
   PrintToStdoutAndFile(sprintf("%-*s  %10d  %10d  %10d  %10.1f  %s\n", $desc_w, $desc, GetNumLinesInFile($allacc_file), $nlost, $ncreated, $nsecs, $allacc_file), $sum_FH);
   if($ncreated == 0) { # this is an okay result
-    if((! $do_nt) && $do_try_nt) { # the one case in which we retry the query in nuccore
+    if((! $do_nt) && (! $do_not_try_nt)) { # the one case in which we retry the query in nuccore
       $do_nt      = 1;
       $keep_going = 1; 
     }
