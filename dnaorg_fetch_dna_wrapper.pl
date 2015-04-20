@@ -326,7 +326,7 @@ while($keep_going) {
       else { 
         PrintToStdoutAndFile("# No accessions fetched.\n# Exiting.\n", $sum_FH);
       }        
-      Conclude($start_secs, $sum_FH, $log_FH);
+      Conclude($start_secs, -1, $sum_FH, $log_FH);
       exit 0;
     }
   }
@@ -378,13 +378,13 @@ if($do_num_mode) {
   else { 
     PrintToStdoutAndFile("Number-of-protein-records: $ncreated\n", $sum_FH);
   }    
-  Conclude($start_secs, $sum_FH, $log_FH);
+  Conclude($start_secs, $do_nt, $sum_FH, $log_FH);
   exit 0;
 }
 if(GetNumLinesInFile($acc_file) == 0) { # this is an okay result
   PrintToStdoutAndFile("#\n", $sum_FH);
   PrintToStdoutAndFile("# No (non-suppressed) accessions fetched. Exiting.\n", $sum_FH);
-  Conclude($start_secs, $sum_FH, $log_FH);
+  Conclude($start_secs, $do_nt, $sum_FH, $log_FH);
   exit 0;
 }
 
@@ -945,7 +945,7 @@ if(! $do_nt) {
 ##########
 # Conclude
 ##########
-Conclude($start_secs, $sum_FH, $log_FH);
+Conclude($start_secs, $do_nt, $sum_FH, $log_FH);
 
 exit 0;
 
@@ -1243,16 +1243,22 @@ sub removeGivenIdstat {
 # Subroutine: Conclude()
 # Purpose:    Print out conclusion text and close file handles in preparation for exit.
 # Args:       $start_secs: number of seconds since epoch and start of this script running
+#             $do_nt:      '1' if we're in nucleotide mode, '0' if in protein mode, -1 if no records fetched
 #             $sum_FH:     file handle for summary file
 #             $log_FH:     file handle for log file
 # Returns:    void
 sub Conclude {
   my $sub_name  = "Conclude()";
-  my $nargs_exp = 3;
+  my $nargs_exp = 4;
   
-  my ($start_seconds, $sum_FH, $log_FH) = (@_);
+  my ($start_seconds, $do_nt, $sum_FH, $log_FH) = (@_);
   ($seconds, $microseconds) = gettimeofday();
   my $end_secs = ($seconds + ($microseconds / 1000000.));
+
+  my $protein_or_nt;
+  if   ($do_nt == -1) { $protein_or_nt = "N/A"; }
+  elsif($do_nt ==  1) { $protein_or_nt = "nucleotide"; }
+  elsif($do_nt ==  0) { $protein_or_nt = "protein"; }
 
   PrintToStdoutAndFile("#\n", $sum_FH);
   PrintToStdoutAndFile("# Output files created by this script with brief descriptions listed in log file:  $log_file\n",    $sum_FH);
@@ -1261,6 +1267,7 @@ sub Conclude {
   PrintToStdoutAndFile("# All output files created in directory:                                           \.\/$out_dir\n", $sum_FH);
   PrintToStdoutAndFile(sprintf("# Total seconds elapsed:                                                           %.1f\n", $end_secs-$start_secs), $sum_FH);
   PrintToStdoutAndFile("#\n",     $sum_FH);
+  PrintToStdoutAndFile("# Type of records: $protein_or_nt\n", $sum_FH);
   PrintToStdoutAndFile("#[ok]\n", $sum_FH);
   
   close $log_FH;
