@@ -9,6 +9,8 @@
 # in which case the CDSs will be fetched, or DNA (requiring
 # the -dna option).
 # 
+# TEST!
+#
 # usage: perl dnaorg_fetch_dna_wrapper.pl <symbol>
 #   OR 
 # usage: perl dnaorg_fetch_dna_wrapper.pl -d <symbol> -alist <file with list of protein accessions>
