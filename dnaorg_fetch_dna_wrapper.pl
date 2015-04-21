@@ -184,7 +184,7 @@ my $nsecs;          # number of seconds a command took
 my $errmsg;         # error message
 
 $do_acclist_mode = ($do_plist_mode || $do_ntlist_mode) ? 1 : 0; # $do_acclist_mode is true if either -plist or -ntlist used
-$do_nt           = ($do_nt_userset) ? 1 : 0;
+$do_nt           = ($do_nt_userset || $do_ntlist_mode) ? 1 : 0;
 
 ###############
 # Preliminaries
