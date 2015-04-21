@@ -180,7 +180,6 @@ my $desc;           # description of a step
 my $nlines;         # number of lines in a file
 my $nlost;          # number of lost elements (often accessions) in a step
 my $ncreated;       # number of created elements (often accessions) in a step, should always be 0
-my $descwidth = 80; # width of description column
 my $nsecs;          # number of seconds a command took
 my $errmsg;         # error message
 
@@ -252,14 +251,14 @@ PrintToStdoutAndFile("#\n", $sum_FH);
 # Stage 1: Fetch the sequences
 ##############################
 if($do_num_mode) { 
-  PrintToStdoutAndFile("# Special mode (-num): determining number of matching %s accessions, then exiting.\n", ($do_nt_userset) ? "nucleotide" : "protein", $sum_FH);
+  PrintToStdoutAndFile(sprintf("# Special mode (-num): determining number of matching %s accessions, then exiting.\n", ($do_nt_userset) ? "nucleotide" : "protein"), $sum_FH);
 }
 else { 
   PrintToStdoutAndFile("# Stage 1: preparing and fetching sequences\n", $sum_FH);
 }
 PrintToStdoutAndFile("#\n", $sum_FH);
 # create column headers
-my $desc_w       = length($symbol) + 63;
+my $desc_w       = length($symbol) + 68;
 my $desc_dashes = "#";
 for(my $i = 0; $i < $desc_w-1; $i++) { $desc_dashes .= "-"; }
 PrintToStdoutAndFile(sprintf("#%-*s  %10s  %10s  %10s  %10s  %s\n", $desc_w-1, " description", "\# output", "\# lost", "\# created", "seconds", "output-file-name"), $sum_FH);
@@ -289,15 +288,15 @@ while($keep_going) {
   $query = "\"$symbol [GENE]\"";
   if($do_acclist_mode) { 
     $cmd  = "cat $acclist_file | sort > $allacc_file";
-    $desc = "Sorted accessions from file $acclist_file";
+    $desc = "Sorted_accessions_from_file_$acclist_file";
   }
   elsif($do_nt) { 
     $cmd  = "esearch -db nuccore -query $query | efetch -format acc | sort > $allacc_file";
-    $desc = "Nucleotide accessions fetched from nuccore database";
+    $desc = "Nucleotide_accessions_fetched_from_nuccore_database";
   }
   else { # default
     $cmd  = "esearch -db protein -query $query | efetch -format acc | sort > $allacc_file";
-    $desc = "Protein accessions fetched from protein database";
+    $desc = "Protein_accessions_fetched_from_protein_database";
   }
   $nsecs  = RunCommand($cmd, $be_verbose, $cmd_FH);
   $nlines = GetNumLinesInFile($allacc_file);
@@ -341,8 +340,8 @@ while($keep_going) {
 my $acc_file         = $out_dir . $symbol . ".acc";
 my $acc_file_lost    = $acc_file . ".lost";
 my $acc_file_created = $acc_file . ".created";
-if($do_nt) { $desc  = "Non-suppressed nucleotide accessions fetched from nuccore database"; }
-else       { $desc  = "Non-suppressed protein accessions fetched from protein database"; }
+if($do_nt) { $desc  = "Non-suppressed_nucleotide_accessions_fetched_from_nuccore_database"; }
+else       { $desc  = "Non-suppressed_protein_accessions_fetched_from_protein_database"; }
 my $idstat_file = $allacconly_file . ".idstat";
 $cmd = "$idstat -i PUBSEQ_OS -A $allacconly_file > $idstat_file";
 $nsecs = RunCommand($cmd, $be_verbose, $cmd_FH);
@@ -371,11 +370,12 @@ if($errmsg ne "") { die $errmsg; }
 
 if($do_num_mode) { 
   PrintToStdoutAndFile("#\n", $sum_FH);
+  my $num_records = GetNumLinesInFile($acc_file) - $nlost;
   if($do_nt) { 
-    PrintToStdoutAndFile("Number-of-nucleotide-records: $ncreated\n", $sum_FH);
+    PrintToStdoutAndFile("Number_of_nucleotide_records: $num_records\n", $sum_FH);
   }
   else { 
-    PrintToStdoutAndFile("Number-of-protein-records: $ncreated\n", $sum_FH);
+    PrintToStdoutAndFile("Number_of_protein_records: $num_records\n", $sum_FH);
   }    
   Conclude($start_secs, $do_nt, $sum_FH, $log_FH);
   exit 0;
@@ -402,7 +402,7 @@ if(! $do_nt) {
   else { 
     $cmd .= " > $efa_file";
   }
-  $desc = "Protein accessions that have CDS annotation";
+  $desc = "Protein_accessions_that_have_CDS_annotation";
   $nsecs = RunCommand($cmd, $be_verbose, $cmd_FH);
   OutputFileInfo($efa_file, $desc, $cmd, $log_FH);
 
@@ -624,7 +624,7 @@ if((! $do_nt) && $do_uniprot_xref) {
   my $nxref = GetNumLinesInFile($tmpfile1);
   $nlost = $nxref - scalar(keys %coords_for_prot_HA);
 
-  $desc = "Following xrefs to find CDS for accessions with direct CDS links";
+  $desc = "Following_xrefs_to_find_CDS_for_accessions_with_direct_CDS_links";
   PrintToStdoutAndFile(sprintf("%-*s  %10d  %10d  %10s  %10.1f  %s\n", $desc_w, $desc, $nxref, $nlost, "?", $tmp_end_secs - $tmp_start_secs, $up_efa_file), $sum_FH);
 
 } # end of 'if($do_uniprot_xref)'
@@ -639,7 +639,7 @@ if((! $do_nt) && $do_uniprot_xref) {
 my $idfetch_file = $out_dir . $symbol . ".idfetch";
 if($do_old) { 
   $cmd  = "awk '{ print \$1 }' $efa_file | sort | uniq > $idfetch_file";
-  $desc = "Unique CDS source sequences (idfetch input file)";
+  $desc = "Unique_CDS_source_sequences_(idfetch_input_file)";
   $nsecs = RunCommand($cmd, $be_verbose, $cmd_FH);
   OutputFileInfo($idfetch_file, $desc, $cmd, $log_FH); 
 # don't output a summary of this step 
@@ -653,7 +653,7 @@ my $fa_file_names   = $fa_file . ".names";
 my $fa_file_lost    = $fa_file . ".lost";
 my $fa_file_created = $fa_file . ".created";
 my $cds_or_nt       = ($do_nt) ? "nucleotide" : "CDS";
-$desc  = "CDS sequences in FASTA format";
+$desc  = "CDS_sequences_in_FASTA_format";
 
 # Preliminary step: we need a version of $acc_file that has version information removed
 my $acconly_file = $out_dir . $symbol . ".acconly"; # same as $acc_file but with version info removed
@@ -665,7 +665,7 @@ if($do_old) {
 }
 elsif($do_nt) { 
   $cmd  = "$idfetch -t 5 -c 1 -G $acc_file | $exec_dir/id_fasta.pl > $fa_file";
-  $desc = "nucleotide sequences in FASTA format";
+  $desc = "Nucleotide_sequences_in_FASTA_format";
 }
 else { # normal case
   $cmd = "$fetch_cds -odir $out_dir $efa_file > $fa_file";
@@ -738,7 +738,7 @@ my $exists_file_lost    = $exists_file . ".lost";
 my $exists_file_created = $exists_file . ".created";
 my $db             = ($do_nt) ? "nuccore" : "protein";
 my $protein_or_dna = ($do_nt) ? "DNA" : "protein";
-$desc = "Validating that all accessions have a corresponding $protein_or_dna record";
+$desc = sprintf("Validating_that_all_accessions_have_a_corresponding_%s_record", $protein_or_dna);
 $cmd  = "cat $acc_file | epost -db $db -format acc | efetch -format acc | sed 's/\\.[0-9]*//' | sort > $exists_file";
 $nsecs += RunCommand($cmd, $be_verbose, $cmd_FH);
 OutputFileInfo($exists_file, $desc, $cmd, $log_FH);
@@ -772,7 +772,7 @@ my $lexists_file         = $out_dir . $symbol . ".lexists";
 my $lexists_file_lost    = $lexists_file . ".lost";
 my $lexists_file_created = $lexists_file . ".created";
 
-$desc = "Validating that all accessions have a corresponding locus";
+$desc = "Validating_that_all_accessions_have_a_corresponding_locus";
 $cmd  = "cat $acc_file | epost -db $db -format acc | efetch -format gpc | xtract -insd INSDSeq_locus | grep . | sort | sed 's/\\.[0-9]*//' > $lexists_file";
 $nsecs = RunCommand($cmd, $be_verbose, $cmd_FH);
 OutputFileInfo($lexists_file, $desc, $cmd, $log_FH);
@@ -806,7 +806,7 @@ my $has_cds_file         = $out_dir . $symbol . ".has_cds";
 my $has_cds_file_lost    = $has_cds_file . ".lost";
 my $has_cds_file_created = $has_cds_file . ".created";
 if(! $do_nt) { 
-  $desc = "Validating that we fetched sequences for all proteins with a CDS";
+  $desc = "Validating_that_we_fetched_sequences_for_all_proteins_with_a_CDS";
   $cmd  = "cat $exists_file | epost -db protein -format acc | efetch -format gpc | xtract -pattern INSDSeq -ACCN INSDSeq_accession-version -group INSDSeq_feature-table -match INSDFeature_key:CDS -element \"&ACCN\" | sort | sed 's/\\.[0-9]*//' > $has_cds_file";
   $nsecs = RunCommand($cmd, $be_verbose, $cmd_FH);
   OutputFileInfo($has_cds_file, $desc, $cmd, $log_FH);
@@ -840,7 +840,7 @@ my $no_cds_file         = $out_dir . $symbol . ".no_cds";
 my $no_cds_file_lost    = $no_cds_file . ".lost";
 my $no_cds_file_created = $no_cds_file . ".created";
 if(! $do_nt) { 
-  $desc = "Validating that no seqs were fetched for any proteins w/o a CDS";
+  $desc = "Validating_that_no_seqs_were_fetched_for_any_proteins_without_a_CDS";
   # same command as step 2.3 with 'avoid' replacing 'match'
   $cmd  = "cat $exists_file | epost -db protein -format acc | efetch -format gpc | xtract -pattern INSDSeq -ACCN INSDSeq_accession-version -group INSDSeq_feature-table -avoid INSDFeature_key:CDS -element \"&ACCN\" | sort | sed 's/\\.[0-9]*//' > $no_cds_file";
   $nsecs = RunCommand($cmd, $be_verbose, $cmd_FH);
@@ -937,7 +937,7 @@ if(! $do_nt) {
   ($seconds, $microseconds) = gettimeofday(); # so we can time this step
   my $step_end_secs = ($seconds + ($microseconds / 1000000.));
 
-  PrintToStdoutAndFile(sprintf("%-*s  %10d  %10d  %10d  %10.1f  %s\n", $desc_w, "Validating that proteins w/o CDS are explainable (type A, B or C)", GetNumLinesInFile($no_cds_type_a_b_c_file), $nlost, $ncreated, $step_end_secs - $step_start_secs, $no_cds_type_a_b_c_file), $sum_FH);
+  PrintToStdoutAndFile(sprintf("%-*s  %10d  %10d  %10d  %10.1f  %s\n", $desc_w, "Validating_that_proteins_without_CDS_are_explainable_(type_A,_B_or_C)", GetNumLinesInFile($no_cds_type_a_b_c_file), $nlost, $ncreated, $step_end_secs - $step_start_secs, $no_cds_type_a_b_c_file), $sum_FH);
   if($errmsg ne "") { die $errmsg; }
 }
 
