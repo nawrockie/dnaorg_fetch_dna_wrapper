@@ -1220,6 +1220,7 @@ sub removeGivenIdstat {
       if($supp_A[$ctr]    eq "Yes")  { $do_remove = 1; } # suppressed, remove it
       elsif($supp_A[$ctr] eq "Perm") { $do_remove = 1; } # permanently suppressed, remove it
       elsif($supp_A[$ctr] eq "No")   { ; } # not suppressed
+      elsif($supp_A[$ctr] eq "Eblk") { ; } # 'edit-blocked', not suppressed as far as I understand, so we do not remove it
       else                           { die "ERROR unable to parse Supp column for $accn2match, read $supp_A[$ctr]"; }
 
       if(! $do_remove) { 
