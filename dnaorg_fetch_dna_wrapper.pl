@@ -37,6 +37,7 @@ $usage .= "  -v      : be verbose; output commands to stdout as they're run\n";
 $usage .= "  -d <s>  : define output directory as <s>, not <symbol>\n";
 $usage .= "  -nt     : search for matches to symbol in ONLY the nuccore db, not the protein db\n";
 $usage .= "  -notnt  : if zero matches for symbol in the protein db, DO NOT retry using the nuccore db\n";
+$usage .= "  -nosym  : only include proteins for which the symbol is the primary symbol, not the synonym\n";
 $usage .= "\n";
 $usage .= " OPTIONS THAT ENABLE ALTERNATE MODES:\n";
 $usage .= "  -plist  : <symbol> is really a list of protein accessions,    requires -d option too\n";
@@ -72,6 +73,7 @@ my $do_uniprot_xref = 0;     # set to '1' if -up option used.
 my $do_nt_userset   = 0;     # set to '1' if -nt option is used
 my $do_nt           = 0;     # set to '1' if EITHER -nt used or we switch to searching in nuccore mid-script
 my $do_not_try_nt   = 0;     # set to '1' if -notnt option is used
+my $do_nosym        = 0;     # set to '1' if -nosym option is used
 my $do_old          = 0;     # set to '1' with -old
 
 # variables that are indirectly changed by cmdline options
@@ -93,11 +95,13 @@ my $do_ntlist_mode   = 0; # set to '1' if -ntlist option used.
              "ntlist"  => \$do_ntlist_mode,
              "num"     => \$do_num_mode,
              "up"      => \$do_uniprot_xref,
+             "nosym"   => \$do_nosym,
              "old"     => \$do_old);
 
 
 if(scalar(@ARGV) != 1) { die $usage; }
 my ($symbol) = (@ARGV);
+my $cap_symbol = Capitalize($symbol);
 
 # store options used, so we can output them 
 my $opts_used_short = "";
@@ -126,6 +130,10 @@ if($do_not_try_nt) {
   $opts_used_short .= "-notnt ";
   $opts_used_long  .= "# option:  if no matches in the protein database, DO NOT try the nuccore database [-notnt]\n";
 }
+if($do_not_try_nt) { 
+  $opts_used_short .= "-nosym ";
+  $opts_used_long  .= "# option:  require a match to the gene symbol, gene_synonyms matches are ignored [-nosym]\n";
+}
 if($do_ntlist_mode) { 
   $opts_used_short .= "-ntlist ";
   $opts_used_long  .= "# option:  $symbol is a list of nucleotide accessions, not a symbol [-ntlist]\n"; 
@@ -153,6 +161,9 @@ if($do_plist_mode || $do_ntlist_mode) {
   }
   if($do_not_try_nt) { 
     die "ERROR the -plist and -ntlist options are incompatible with -notnt";
+  }
+  if($do_nosym) { 
+    die "ERROR the -plist and -ntlist options are incompatible with -nosym"; 
   }
   if($do_num_mode) { 
     die "ERROR the -plist and -ntlist options are incompatible with -num";
@@ -209,6 +220,7 @@ if($do_acclist_mode) {
   $acclist_file = $symbol;
   $symbol       = $out_dir; # this must be defined, we died above it if wasn't
   $symbol       =~ s/\///;
+  $cap_symbol   = Capitalize($symbol);
   if(! -e $acclist_file) { die "ERROR no file $acclist_file exists"; }
   if(! -s $acclist_file) { die "ERROR file $acclist_file is empty"; }
 }
@@ -276,7 +288,6 @@ PrintToStdoutAndFile(sprintf("%s  %10s  %10s  %10s  %10s  %s\n", $desc_dashes, "
 # TODO: experiment with different queries to pull in aliases/synonyms,
 # possibly with command line options. Also experiment with iterating 
 # this step to pull in more accessions.
-my $database        = undef; # set below
 my $allacc_file     = $out_dir . $symbol . ".all.acc";
 my $allacconly_file = $out_dir . $symbol . ".all.acconly";
 my $keep_going      = 1; # we set this to '0' after this step UNLESS 
@@ -357,7 +368,7 @@ RunCommand($cmd, $be_verbose, $cmd_FH);
 $cmd = "awk '{ print \$1 }' $acc_file | comm -2 -3 - $allacc_file > $acc_file_created";
 RunCommand($cmd, $be_verbose, $cmd_FH);
 
-# enforce nothing was lost or created
+# enforce nothing was created
 ($nlost, $ncreated, $errmsg) = CheckLostAndCreated($acc_file_lost, -1, $acc_file_created, 0); 
 # in above subroutine call: -1 says it's okay if we lost some sequences, '0' says it's not okay if we created some sequences
 
@@ -368,6 +379,125 @@ OutputFileInfo($acc_file_created, "Protein accessions ($ncreated) added by idsta
 PrintToStdoutAndFile(sprintf("%-*s  %10d  %10d  %10d  %10.1f  %s\n", $desc_w, $desc, GetNumLinesInFile($acc_file), $nlost, $ncreated, $nsecs, $acc_file), $sum_FH);
 if($errmsg ne "") { die $errmsg; }
 
+
+###################################################################################
+# Optional Step: If -nosym: remove accessions which have $symbol as a synonym
+# only keeping those for which $symbol is the primary symbol.
+###################################################################################
+if($do_nosym) { 
+  my $tmp_start_secs = ($seconds + ($microseconds / 1000000.));
+
+  my $database = ($do_nt) ? "nuccore" : "protein";
+  my $new_acc_file         = $out_dir . $symbol . ".nosym.acc";
+  my $new_acc_file_lost    = $new_acc_file . ".lost";
+  my $new_acc_file_created = $new_acc_file . ".created";
+
+  my $gene_gene_file     = $out_dir . $symbol . ".gene.gene";
+  $cmd = "cat $acc_file | epost -db $database -format acc | efetch -format gpc | xtract -insd gene gene | grep . | sort > $gene_gene_file";
+  RunCommand($cmd, $be_verbose, $cmd_FH);
+  OutputFileInfo($gene_gene_file,    "Gene:gene values for all accessions in $acc_file (this file is used to remove accessions for which symbol is a synonym).", $cmd, $log_FH);
+
+  my $gene_gene_syn_file = $out_dir . $symbol . ".gene.gene_syn";
+  $cmd = "cat $acc_file | epost -db $database -format acc | efetch -format gpc | xtract -insd gene gene_synonym | grep . | sort > $gene_gene_syn_file";
+  RunCommand($cmd, $be_verbose, $cmd_FH);
+  OutputFileInfo($gene_gene_syn_file,    "Gene:gene_synonym values for all accessions in $acc_file (this file is used to remove accessions for which symbol is a synonym).", $cmd, $log_FH);
+
+  my $cds_gene_file      = $out_dir . $symbol . ".cds.gene";
+  $cmd = "cat $acc_file | epost -db $database -format acc | efetch -format gpc | xtract -insd CDS gene | grep . | sort > $cds_gene_file";
+  RunCommand($cmd, $be_verbose, $cmd_FH);
+  OutputFileInfo($cds_gene_file,    "CDS:gene values for all accessions in $acc_file (this file is used to remove accessions for which symbol is a synonym).", $cmd, $log_FH);
+
+  my $cds_gene_syn_file  = $out_dir . $symbol . ".cds.gene_syn";
+  $cmd = "cat $acc_file | epost -db $database -format acc | efetch -format gpc | xtract -insd CDS gene_synonym | grep . | sort > $cds_gene_syn_file";
+  RunCommand($cmd, $be_verbose, $cmd_FH);
+  OutputFileInfo($cds_gene_syn_file,    "CDS:gene_synonym values for all accessions in $acc_file (this file is used to remove accessions for which symbol is a synonym).", $cmd, $log_FH);
+
+  # Now, each accession should have $symbol as either a gene or a gene_synonym in >= 1 of 
+  # $gene_gene_file/$gene_gene_syn_file or $cds_gene_file/$cds_gene_syn_file
+  # parse them 
+  my %keepme_H = ();
+  foreach my $file ($gene_gene_file, $cds_gene_file) { 
+    open(IN, $file) || die "ERROR unable to open $file";
+    while(my $line = <IN>) { 
+      chomp $line;
+      my @elA = split(/\t/, $line);
+      my $nel = scalar(@elA);
+      $elA[1] =~ s/\;$//; # remove trailing semicolon if one exists;
+      my $cap_el = Capitalize($elA[1]);
+      if($nel > 2) { 
+        die "ERROR more than one match in $file for $elA[0]"; 
+      }
+      elsif($nel == 2) { 
+        if($cap_el eq $cap_symbol) { 
+          $keepme_H{$elA[0]} = 1; 
+        }
+      }
+      elsif($nel != 1) { 
+        die "ERROR unexpected number of tokens in $file for $elA[0]";
+      }
+    }
+    close(IN);
+  }
+
+  my %iamsyn_H = ();
+  foreach my $file ($gene_gene_syn_file, $cds_gene_syn_file) { 
+    open(IN, $file) || die "ERROR unable to open $file";
+    while(my $line = <IN>) { 
+      chomp $line;
+      my @elA = split(/\s+/, $line);
+      my $nel = scalar(@elA);
+      for(my $i = 1; $i < $nel; $i++) { # note we start at '1', not '0'
+        $elA[$i] =~ s/\;$//; # remove trailing semicolon if one exists;
+        my $cap_el = Capitalize($elA[$i]);
+        if($cap_el eq $cap_symbol) { 
+          $iamsyn_H{$elA[0]} = 1; 
+        }
+      }
+    }
+    close(IN);
+  }
+
+  # all accessions should either exist in %keepme_H or %iamsyn_H
+  open(IN, $acc_file) || die "ERROR unable to open $acc_file for reading";
+  open(OUT, ">" . $new_acc_file) || die "ERROR unable to open $new_acc_file for writing";
+  while(my $acc = <IN>) { 
+    chomp $acc;
+    if($keepme_H{$acc}) { 
+      print OUT $acc . "\n"; 
+    }
+    elsif(! exists $iamsyn_H{$acc}) { 
+      die "ERROR $acc does not have $symbol as a primary symbol or an alias"; 
+    }
+  }
+  close(IN);
+  close(OUT);
+  ($seconds, $microseconds) = gettimeofday();
+  my $tmp_end_secs = ($seconds + ($microseconds / 1000000.));
+
+  # which accessions were lost because they have symbol as a synonym?
+  $cmd = "awk '{ print \$1 }' $acc_file | comm -2 -3 $new_acc_file - > $new_acc_file_lost";
+  RunCommand($cmd, $be_verbose, $cmd_FH);
+
+  # which accessions were created here (should be none)
+  $cmd = "awk '{ print \$1 }' $acc_file | comm -2 -3 - $new_acc_file > $new_acc_file_created";
+  RunCommand($cmd, $be_verbose, $cmd_FH);
+
+  # enforce nothing was created
+  ($nlost, $ncreated, $errmsg) = CheckLostAndCreated($new_acc_file_lost, -1, $new_acc_file_created, 0); 
+  # in above subroutine call: -1 says it's okay if we lost some sequences, '0' says it's not okay if we created some sequences
+
+  OutputFileInfo($new_acc_file_lost,    "Accessions ($nlost) that have symbol as a synonym.", $cmd, $log_FH);
+  OutputFileInfo($new_acc_file_created, "Accessions ($ncreated) added by processing synonyms.", $cmd, $log_FH);
+
+  $desc = "Accessions_for_which_symbol_is_a_primary_symbol_and_not_a_synonymn";
+  PrintToStdoutAndFile(sprintf("%-*s  %10d  %10d  %10s  %10.1f  %s\n", $desc_w, $desc, GetNumLinesInFile($new_acc_file), $nlost, $ncreated, $tmp_end_secs - $tmp_start_secs, $new_acc_file), $sum_FH);
+
+  $acc_file = $new_acc_file; # rename $acc_file for subsequent steps
+}
+
+###################################################################################
+# Exit if we're in number-only mode, or we don't have any accessions left
+###################################################################################
 if($do_num_mode) { 
   PrintToStdoutAndFile("#\n", $sum_FH);
   my $num_records = GetNumLinesInFile($acc_file) - $nlost;
@@ -1162,6 +1292,7 @@ sub LengthFromCoords {
 sub removeGivenIdstat {
   my $sub_name  = "removeSuppressedGivenIdstat()";
   my $nargs_exp = 3;
+  if(scalar(@_) != $nargs_exp) { die "ERROR $sub_name entered with wrong number of input args"; }
   
   my ($allacc_file, $idstat_file, $out_file) = (@_);
   my ($seconds, $microseconds) = gettimeofday();
@@ -1239,6 +1370,22 @@ sub removeGivenIdstat {
   return ($end_secs - $start_secs);
 }
   
+# Subroutine: Capitalize()
+# Purpose:    Return the capitalized version of a string.
+# Args:       $str: string to capitalize
+# Returns:    $cap_str: $str capitalize
+sub Capitalize {
+  my $sub_name  = "Capitalize()";
+  my $nargs_exp = 1;
+  if(scalar(@_) != $nargs_exp) { die "ERROR $sub_name entered with wrong number of input args"; }
+
+  my ($str) = (@_);
+
+  my $ret_str = $str;
+  $ret_str =~ tr/a-z/A-Z/;
+
+  return $ret_str;
+}
 
 # Subroutine: Conclude()
 # Purpose:    Print out conclusion text and close file handles in preparation for exit.
@@ -1250,6 +1397,7 @@ sub removeGivenIdstat {
 sub Conclude {
   my $sub_name  = "Conclude()";
   my $nargs_exp = 4;
+  if(scalar(@_) != $nargs_exp) { die "ERROR $sub_name entered with wrong number of input args"; }
   
   my ($start_seconds, $do_nt, $sum_FH, $log_FH) = (@_);
   ($seconds, $microseconds) = gettimeofday();
