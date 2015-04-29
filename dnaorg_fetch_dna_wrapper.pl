@@ -6,6 +6,10 @@ use warnings;
 use Getopt::Long;
 use Time::HiRes qw(gettimeofday);
 
+my $list_dir = "/panfs/pan1/dnaorg/share/";
+my $df_ffile    = $list_dir . "all.multi-synonym.list";
+my $df_sfile    = $list_dir . "all.primary-and-synonym.list";
+
 # The definition of $usage explains the script and usage:
 my $usage = "\ndnaorg_fetch_dna_wrapper.pl:\n";
 $usage .= "\n"; 
@@ -30,6 +34,10 @@ $usage .= " Mode 3: fetch nucleotide sequences for a list of nuccore accessions\
 $usage .= "\n";
 $usage .= "   usage: 'perl dnaorg_fetch_dna_wrapper.pl [OPTIONS] -d <name_for_outdir> -ntlist <file_with_list_of_nucleotide_accessions>'\n";
 $usage .= "\n";
+$usage .= " NOTE: NCBI Gene symbols can include whitespace (' ') but this script\n";
+$usage .= "       does not allow them in the <symbol> command line argument. To\n";
+$usage .= "       specify a ' ' in the <symbol> replace it with a '~' on the\n";
+$usage .= "       command line. (As of 04/28/15 no '~' exist in NCBI Gene symbols\n";
 $usage .= "\n";
 $usage .= " BASIC OPTIONS:\n";
 $usage .= "  -f      : force; if dir <symbol> exists, overwrite it\n";
@@ -37,12 +45,18 @@ $usage .= "  -v      : be verbose; output commands to stdout as they're run\n";
 $usage .= "  -d <s>  : define output directory as <s>, not <symbol>\n";
 $usage .= "  -nt     : search for matches to symbol in ONLY the nuccore db, not the protein db\n";
 $usage .= "  -notnt  : if zero matches for symbol in the protein db, DO NOT retry using the nuccore db\n";
-$usage .= "  -nosym  : only include proteins for which the symbol is the primary symbol, not the synonym\n";
+$usage .= "  -nosym  : only include records for which the symbol is the primary symbol, not the synonym\n";
 $usage .= "\n";
 $usage .= " OPTIONS THAT ENABLE ALTERNATE MODES:\n";
 $usage .= "  -plist  : <symbol> is really a list of protein accessions,    requires -d option too\n";
 $usage .= "  -ntlist : <symbol> is really a list of nucleotide accessions, requires -d option too\n";
 $usage .= "  -num    : determine number of matching protein/nucleotide accessions, then exit\n";
+$usage .= "\n";
+$usage .= " OPTIONS THAT AFFECT FAILURE/WARNING OF PRE-DETERMINED SYMBOLS:\n";
+$usage .= "  -ffile <f> : fail          if a symbol listed in <f> is used as input symbol [default: $df_ffile]\n";
+$usage .= "  -sfile <f> : skip synonyms if a symbol listed in <f> is used as input symbol [default: $df_sfile]\n";
+$usage .= "  -noffile   : do not fail for symbols listed in a file\n";
+$usage .= "  -nosfile   : do not skip synonyms for symbols listed in a file\n";
 $usage .= "\n";
 $usage .= " EXPERIMENTAL/ADVANCED OPTIONS:\n";
 $usage .= "  -up     : additional run experimental code for fetching non-CDS UniProt CDS via xrefs\n";
@@ -75,6 +89,10 @@ my $do_nt           = 0;     # set to '1' if EITHER -nt used or we switch to sea
 my $do_not_try_nt   = 0;     # set to '1' if -notnt option is used
 my $do_nosym        = 0;     # set to '1' if -nosym option is used
 my $do_old          = 0;     # set to '1' with -old
+my $ffile           = undef; # set to value if -ffile used
+my $sfile           = undef; # set to value if -sfile used
+my $no_ffile        = 0;     # set to '1' if -noffile used
+my $no_sfile        = 0;     # set to '1' if -nosfile used
 
 # variables that are indirectly changed by cmdline options
 my $acclist_file    = undef; # if -plist or -ntlist is used, this is defined as $symbol
@@ -94,14 +112,19 @@ my $do_ntlist_mode   = 0; # set to '1' if -ntlist option used.
              "plist"   => \$do_plist_mode,
              "ntlist"  => \$do_ntlist_mode,
              "num"     => \$do_num_mode,
+             "ffile=s" => \$ffile,
+             "sfile=s" => \$sfile,
+             "noffile" => \$no_ffile,
+             "nosfile" => \$no_sfile,
              "up"      => \$do_uniprot_xref,
              "nosym"   => \$do_nosym,
              "old"     => \$do_old);
 
-
 if(scalar(@ARGV) != 1) { die $usage; }
 my ($symbol) = (@ARGV);
 my $cap_symbol = Capitalize($symbol);
+my $cap_no_tilde_symbol = $cap_symbol;
+my $cap_no_tilde_symbol =~ s/\~/ /g;
 
 # store options used, so we can output them 
 my $opts_used_short = "";
@@ -142,6 +165,22 @@ if($do_num_mode) {
   $opts_used_short .= "-num ";
   $opts_used_long  .= "# option:  determining number of matching protein accessions, then exiting [-num]\n"; 
 }
+if(defined $ffile) { 
+  $opts_used_short .= "-ffile $ffile ";
+  $opts_used_long  .= "# option:  list file with symbols to fail for: $ffile [-ffile]\n"; 
+}
+if(defined $sfile) { 
+  $opts_used_short .= "-sfile $sfile ";
+  $opts_used_long  .= "# option:  list file with symbols to skip synonyms for: $sfile [-sfile]\n"; 
+}
+if(defined $no_ffile) { 
+  $opts_used_short .= "-noffile "; 
+  $opts_used_long  .= "# option:  no list file with symbols to fail for [-noffile]\n"; 
+}
+if(defined $no_sfile) { 
+  $opts_used_short .= "-nosfile "; 
+  $opts_used_long  .= "# option:  no list file with symbols to skip synonyms for [-nosfile]\n"; 
+}
 if($do_uniprot_xref) { 
   $opts_used_short .= "-up ";
   $opts_used_long  .= "# option:  trying to fetch non-CDS UniProt using xrefs [-up]\n";
@@ -168,6 +207,12 @@ if($do_plist_mode || $do_ntlist_mode) {
   if($do_num_mode) { 
     die "ERROR the -plist and -ntlist options are incompatible with -num";
   }
+  if(defined $ffile) { 
+    die "ERROR the -plist and -ntlist options are incompatible with -ffile";
+  }
+  if(defined $sfile) { 
+    die "ERROR the -plist and -ntlist options are incompatible with -sfile";
+  }
 }
 if($do_plist_mode && $do_ntlist_mode) { 
   die "ERROR the -plist and -ntlist options are incompatible"; 
@@ -180,19 +225,29 @@ if($do_nt_userset) {
     die "ERROR the -nt option is incompatible with the -notnt option";
   }
 }
+if(defined $ffile && $no_ffile) { 
+    die "ERROR the -ffile and -noffile options are incompatible"; 
+}
+if(defined $sfile && $no_sfile) { 
+    die "ERROR the -sfile and -nosfile options are incompatible"; 
+}
 
 my $exec_dir  = "/panfs/pan1/dnaorg/programs";
 my $idstat    = "/netopt/genbank/subtool/bin/idstat";
 my $fetch_cds = "$exec_dir/esl-fetch-cds.pl";
 my $idfetch   = "/netopt/ncbi_tools64/bin/idfetch";
-my $query;          # an argument to a '-query' option in a edirect tool cmdline
-my $cmd;            # a command to run with system() in RunCommand()
-my $desc;           # description of a step
-my $nlines;         # number of lines in a file
-my $nlost;          # number of lost elements (often accessions) in a step
-my $ncreated;       # number of created elements (often accessions) in a step, should always be 0
-my $nsecs;          # number of seconds a command took
-my $errmsg;         # error message
+my $query;              # an argument to a '-query' option in a edirect tool cmdline
+my $cmd;                # a command to run with system() in RunCommand()
+my $desc;               # description of a step
+my $nlines;             # number of lines in a file
+my $nlost;              # number of lost elements (often accessions) in a step
+my $ncreated;           # number of created elements (often accessions) in a step, should always be 0
+my $nsecs;              # number of seconds a command took
+my $errmsg;             # error message
+my $using_df_ffile = 0; # set to '1' if --ffile not used
+my $using_df_sfile = 0; # set to '1' if --sfile not used
+if(! defined $ffile) { $ffile = $df_ffile; $using_df_ffile = 1; }
+if(! defined $sfile) { $sfile = $df_sfile; $using_df_sfile = 1; }
 
 $do_acclist_mode = ($do_plist_mode || $do_ntlist_mode) ? 1 : 0; # $do_acclist_mode is true if either -plist or -ntlist used
 $do_nt           = ($do_nt_userset || $do_ntlist_mode) ? 1 : 0;
@@ -223,6 +278,39 @@ if($do_acclist_mode) {
   $cap_symbol   = Capitalize($symbol);
   if(! -e $acclist_file) { die "ERROR no file $acclist_file exists"; }
   if(! -s $acclist_file) { die "ERROR file $acclist_file is empty"; }
+  $no_ffile = 1;
+  $no_sfile = 1;
+}
+
+# check if the symbol is in the fail file and nosym file, if nec
+if(! $no_ffile) { 
+  if(checkFileForSymbol($ffile, $cap_no_tilde_symbol)) { 
+    my $die_msg;
+    if($using_df_ffile) { 
+      $die_msg =  "FAIL: $symbol is listed in $ffile, this symbol is ambiguous because it is a synonym\n";
+      $die_msg .= "for > 1 GENE primary symbols and never a primary symbol itself. Exiting.\n"; 
+    }
+    else { # not using the default file, unsure why we're failing:
+      $die_msg = "FAIL: $symbol is listed in $ffile listed with -ffile. Exiting."; 
+    }
+    die $die_msg;
+  }
+}
+my $warn_msg = undef;
+if((! $no_sfile) && (! $do_nosym)) { 
+  if(checkFileForSymbol($sfile, $cap_no_tilde_symbol)) { 
+    if($using_df_sfile) { 
+      $warn_msg  = "WARNING: $symbol is listed in $sfile, this symbol is ambiguous because it is a primary symbol\n";
+      $warn_msg .= "and an alias >= 1 other GENE primary symbols.\n"; 
+      $warn_msg .= "***Accessions for which this symbol is a synonym (and not the primary symbol) will be skipped.***\n";
+      $warn_msg .= "(To turn this behavior off, use -nosfile)\n";
+    }
+    else { 
+      $warn_msg  = "WARNING: $symbol is listed in $sfile supplied with -sfile.\n";
+      $warn_msg .= "***Accessions for which this symbol is a synonym (and not the primary symbol) will be skipped.***\n";
+    }
+    $do_nosym = 1; 
+  }
 }
 
 # create the dir
@@ -241,6 +329,10 @@ open($cmd_FH, ">" . $cmd_file) || die "ERROR unable to open $cmd_file for writin
 OutputFileInfo($log_file, "log file containing list and description of all output files", "", $log_FH); 
 OutputFileInfo($sum_file, "summary file containing all standard output", "", $log_FH); 
 OutputFileInfo($cmd_file, "command file all executed commands", "", $log_FH); 
+
+if(defined $warn_msg) {     
+  PrintToStdoutAndFile($warn_msg, $sum_FH);
+}
 
 # output banner
 my $script_name = "dnaorg_fetch_dna_wrapper.pl";
@@ -296,7 +388,15 @@ my $keep_going      = 1; # we set this to '0' after this step UNLESS
                          # and retry the search in 'nuccore'.
 
 while($keep_going) { 
-  $query = "\"$symbol [GENE]\"";
+  my $query_symbol = $symbol;
+  if($query_symbol =~ m/\~/) { 
+    $warn_msg = "WARNING: replacing ~ characters in input symbol with spaces\n";
+    PrintToStdoutAndFile($warn_msg, $sum_FH);
+    $query_symbol =~ s/\~/ /g;
+  }
+  $query = "\"$query_symbol [GENE]\"";
+  printf("$query\n");
+  exit 0;
   if($do_acclist_mode) { 
     $cmd  = "cat $acclist_file | sort > $allacc_file";
     $desc = "Sorted_accessions_from_file_$acclist_file";
@@ -1385,6 +1485,40 @@ sub Capitalize {
   $ret_str =~ tr/a-z/A-Z/;
 
   return $ret_str;
+}
+
+# Subroutine: checkFileForSymbol()
+# Purpose:    Given a file that is one line per symbol, return '1'
+#             if $symbol exists as one of the symbols in the file,
+#             case insensitive!
+# Args:       $in_file: the file to check in for $in_symbol
+#             $in_symbol: string to look for
+# Returns:    '1' if $in_symbol is found in $in_file, else '0'
+# Dies:       if there's more than one token in $in_file
+sub checkFileForSymbol {
+  my $sub_name  = "checkFileForSymbol()";
+  my $nargs_exp = 2;
+  if(scalar(@_) != $nargs_exp) { die "ERROR $sub_name entered with wrong number of input args"; }
+
+  my ($in_file, $in_symbol) = (@_);
+
+  my $cap_in_symbol = Capitalize($in_symbol);
+
+  open(IN, $in_file) || die "ERROR unable to open file $in_file in subroutine $sub_name"; 
+  while(my $line = <IN>) { 
+    chomp $line;
+    my $symbol = $line;
+    $symbol =~ s/^\s+//; # remove leading whitespace
+    $symbol =~ s/\s+$//; # remove trailing whitespace
+    $symbol =~ s/\t.*$//; # remove anything after first tab
+    if(Capitalize($symbol) eq $cap_in_symbol) { 
+      close(IN);
+      return 1; # found a match
+    }
+  }
+  close(IN);
+  
+  return 0; # didn't find a match
 }
 
 # Subroutine: Conclude()
