@@ -71,6 +71,10 @@ source /panfs/pan1/dnaorg/programs/setup-bio-easel.csh.sh
 ##
 ##   usage: 'perl dnaorg_fetch_dna_wrapper.pl [OPTIONS] -d <name_for_outdir> -ntlist <file_with_list_of_nucleotide_accessions>'
 ##
+## NOTE: NCBI Gene symbols can include whitespace (' ') but this script
+##       does not allow them in the <symbol> command line argument. To
+##       specify a ' ' in the <symbol> replace it with a '~' on the
+##       command line. (As of 04/28/15 no '~' exist in NCBI Gene symbols
 ##
 ## BASIC OPTIONS:
 ##  -f      : force; if dir <symbol> exists, overwrite it
@@ -78,11 +82,18 @@ source /panfs/pan1/dnaorg/programs/setup-bio-easel.csh.sh
 ##  -d <s>  : define output directory as <s>, not <symbol>
 ##  -nt     : search for matches to symbol in ONLY the nuccore db, not the protein db
 ##  -notnt  : if zero matches for symbol in the protein db, DO NOT retry using the nuccore db
+##  -nosyn  : only include records for which the symbol is the primary symbol, not the synonym
 ##
 ## OPTIONS THAT ENABLE ALTERNATE MODES:
 ##  -plist  : <symbol> is really a list of protein accessions,    requires -d option too
 ##  -ntlist : <symbol> is really a list of nucleotide accessions, requires -d option too
 ##  -num    : determine number of matching protein/nucleotide accessions, then exit
+##
+## OPTIONS THAT AFFECT FAILURE/WARNING OF PRE-DETERMINED SYMBOLS:
+##  -ffile <f> : fail          if a symbol listed in <f> is used as input symbol [default: /panfs/pan1/dnaorg/share/all.multi-synonym.list]
+##  -sfile <f> : require symbol be primary symbol for symbols listed in file <f> [default: /panfs/pan1/dnaorg/share/all.primary-and-synonym.list]
+##  -noffile   : do not fail for symbols listed in a file
+##  -nosfile   : do not skip synonyms for symbols listed in a file
 ##
 ## EXPERIMENTAL/ADVANCED OPTIONS:
 ##  -up     : additional run experimental code for fetching non-CDS UniProt CDS via xrefs
@@ -427,52 +438,8 @@ dnaorg_fetch_dna_wrapper.pl -num SNORA71D
 #############################################
 # Last updated: EPN, Mon Apr 20 14:23:40 2015
 #############################################
-# Log of changes for previous version:
-# (dnaorg_fetch_cds_wrapper.pl)
-#############################################
-# EPN, Mon Apr 13 10:04:16 2015
 #
-# - Modification to Apr 10 update, dead
-#   and withdrawn accessions are also 
-#   removed in addition to 'suppressed' ones.
+# This directory is under git control. Use
+# git commands to see revision history.
 #
-#  xref: /panfs/pan1/dnaorg/programs/15_0310_dnaorg_fetch_cds_wrapper/00LOG.txt
-#
-# previous version: ./bkups/15_0413-1-before-update/
-# updated  version: ./bkups/15_0413-2-after-update/
-#############################################
-# EPN, Mon Apr 13 10:04:16 2015
-#
-# - Modification to Apr 10 update, dead
-#   and withdrawn accessions are also 
-#   removed in addition to 'suppressed' ones.
-#
-#  xref: /panfs/pan1/dnaorg/programs/15_0310_dnaorg_fetch_cds_wrapper/00LOG.txt
-#
-# previous version: ./bkups/15_0413-1-before-update/
-# updated  version: ./bkups/15_0413-2-after-update/
-#############################################
-# EPN, Fri Apr 10 16:05:52 2015
-#
-# - Added a new step that removes suppressed 
-#   (according to idstat) accessions early
-#   in the script (immediately after fetching
-#   the accessions).
-#
-#  xref: /panfs/pan1/dnaorg/programs/15_0310_dnaorg_fetch_cds_wrapper/00LOG.txt
-#
-# previous version: ./bkups/15_0410-1-before-update/
-# updated  version: ./bkups/15_0410-2-after-update/
-##############################################
-# EPN, Tue Apr  7 15:54:41 2015
-#
-# - Added the -alist option for inputting a list of accessions to
-#   fetch CDS for, instead of a gene symbol
-# - If zero accessions are fetched, script now exits without error,
-#   previously it exited in error in this situation.
-# - codon_start now fetched and added to fetched sequence names
-# - incomplete cds information '<' and '>' before first and final 
-#   coordinate of CDS now preserved in names in output sequence file
-#
-# previous version: ./bkups/15_0407-1-before-update/
-# updated  version: ./bkups/15_0407-2-after-update/
+############################################
