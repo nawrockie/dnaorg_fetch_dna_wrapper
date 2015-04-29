@@ -45,7 +45,7 @@ $usage .= "  -v      : be verbose; output commands to stdout as they're run\n";
 $usage .= "  -d <s>  : define output directory as <s>, not <symbol>\n";
 $usage .= "  -nt     : search for matches to symbol in ONLY the nuccore db, not the protein db\n";
 $usage .= "  -notnt  : if zero matches for symbol in the protein db, DO NOT retry using the nuccore db\n";
-$usage .= "  -nosym  : only include records for which the symbol is the primary symbol, not the synonym\n";
+$usage .= "  -nosyn  : only include records for which the symbol is the primary symbol, not the synonym\n";
 $usage .= "\n";
 $usage .= " OPTIONS THAT ENABLE ALTERNATE MODES:\n";
 $usage .= "  -plist  : <symbol> is really a list of protein accessions,    requires -d option too\n";
@@ -54,7 +54,7 @@ $usage .= "  -num    : determine number of matching protein/nucleotide accession
 $usage .= "\n";
 $usage .= " OPTIONS THAT AFFECT FAILURE/WARNING OF PRE-DETERMINED SYMBOLS:\n";
 $usage .= "  -ffile <f> : fail          if a symbol listed in <f> is used as input symbol [default: $df_ffile]\n";
-$usage .= "  -sfile <f> : skip synonyms if a symbol listed in <f> is used as input symbol [default: $df_sfile]\n";
+$usage .= "  -sfile <f> : require symbol be primary symbol for symbols listed in file <f> [default: $df_sfile]\n";
 $usage .= "  -noffile   : do not fail for symbols listed in a file\n";
 $usage .= "  -nosfile   : do not skip synonyms for symbols listed in a file\n";
 $usage .= "\n";
@@ -87,7 +87,7 @@ my $do_uniprot_xref = 0;     # set to '1' if -up option used.
 my $do_nt_userset   = 0;     # set to '1' if -nt option is used
 my $do_nt           = 0;     # set to '1' if EITHER -nt used or we switch to searching in nuccore mid-script
 my $do_not_try_nt   = 0;     # set to '1' if -notnt option is used
-my $do_nosym        = 0;     # set to '1' if -nosym option is used
+my $do_nosyn        = 0;     # set to '1' if -nosyn option is used
 my $do_old          = 0;     # set to '1' with -old
 my $ffile           = undef; # set to value if -ffile used
 my $sfile           = undef; # set to value if -sfile used
@@ -117,14 +117,14 @@ my $do_ntlist_mode   = 0; # set to '1' if -ntlist option used.
              "noffile" => \$no_ffile,
              "nosfile" => \$no_sfile,
              "up"      => \$do_uniprot_xref,
-             "nosym"   => \$do_nosym,
+             "nosyn"   => \$do_nosyn,
              "old"     => \$do_old);
 
 if(scalar(@ARGV) != 1) { die $usage; }
 my ($symbol) = (@ARGV);
 my $cap_symbol = Capitalize($symbol);
 my $cap_no_tilde_symbol = $cap_symbol;
-my $cap_no_tilde_symbol =~ s/\~/ /g;
+$cap_no_tilde_symbol =~ s/\~/ /g;
 
 # store options used, so we can output them 
 my $opts_used_short = "";
@@ -153,9 +153,9 @@ if($do_not_try_nt) {
   $opts_used_short .= "-notnt ";
   $opts_used_long  .= "# option:  if no matches in the protein database, DO NOT try the nuccore database [-notnt]\n";
 }
-if($do_not_try_nt) { 
-  $opts_used_short .= "-nosym ";
-  $opts_used_long  .= "# option:  require a match to the gene symbol, gene_synonyms matches are ignored [-nosym]\n";
+if($do_nosyn) { 
+  $opts_used_short .= "-nosyn ";
+  $opts_used_long  .= "# option:  require a match to the gene symbol, gene_synonyms matches (or non matches) are ignored [-nosyn]\n";
 }
 if($do_ntlist_mode) { 
   $opts_used_short .= "-ntlist ";
@@ -173,11 +173,11 @@ if(defined $sfile) {
   $opts_used_short .= "-sfile $sfile ";
   $opts_used_long  .= "# option:  list file with symbols to skip synonyms for: $sfile [-sfile]\n"; 
 }
-if(defined $no_ffile) { 
+if($no_ffile) { 
   $opts_used_short .= "-noffile "; 
   $opts_used_long  .= "# option:  no list file with symbols to fail for [-noffile]\n"; 
 }
-if(defined $no_sfile) { 
+if($no_sfile) { 
   $opts_used_short .= "-nosfile "; 
   $opts_used_long  .= "# option:  no list file with symbols to skip synonyms for [-nosfile]\n"; 
 }
@@ -201,8 +201,8 @@ if($do_plist_mode || $do_ntlist_mode) {
   if($do_not_try_nt) { 
     die "ERROR the -plist and -ntlist options are incompatible with -notnt";
   }
-  if($do_nosym) { 
-    die "ERROR the -plist and -ntlist options are incompatible with -nosym"; 
+  if($do_nosyn) { 
+    die "ERROR the -plist and -ntlist options are incompatible with -nosyn"; 
   }
   if($do_num_mode) { 
     die "ERROR the -plist and -ntlist options are incompatible with -num";
@@ -282,7 +282,7 @@ if($do_acclist_mode) {
   $no_sfile = 1;
 }
 
-# check if the symbol is in the fail file and nosym file, if nec
+# check if the symbol is in the fail file and nosyn file, if nec
 if(! $no_ffile) { 
   if(checkFileForSymbol($ffile, $cap_no_tilde_symbol)) { 
     my $die_msg;
@@ -297,19 +297,19 @@ if(! $no_ffile) {
   }
 }
 my $warn_msg = undef;
-if((! $no_sfile) && (! $do_nosym)) { 
+if((! $no_sfile) && (! $do_nosyn)) { 
   if(checkFileForSymbol($sfile, $cap_no_tilde_symbol)) { 
     if($using_df_sfile) { 
-      $warn_msg  = "WARNING: $symbol is listed in $sfile, this symbol is ambiguous because it is a primary symbol\n";
-      $warn_msg .= "and an alias >= 1 other GENE primary symbols.\n"; 
-      $warn_msg .= "***Accessions for which this symbol is a synonym (and not the primary symbol) will be skipped.***\n";
-      $warn_msg .= "(To turn this behavior off, use -nosfile)\n";
+      $warn_msg  = "# WARNING: $symbol is listed in $sfile, this symbol is ambiguous because it is a primary symbol\n";
+      $warn_msg .= "# and an alias >= 1 other GENE primary symbols.\n"; 
+      $warn_msg .= "# ***Accessions for which this symbol is not the primary symbol will be skipped.***\n";
+      $warn_msg .= "# (To turn this behavior off, use -nosfile)\n";
     }
     else { 
-      $warn_msg  = "WARNING: $symbol is listed in $sfile supplied with -sfile.\n";
-      $warn_msg .= "***Accessions for which this symbol is a synonym (and not the primary symbol) will be skipped.***\n";
+      $warn_msg  = "# WARNING: $symbol is listed in $sfile supplied with -sfile.\n";
+      $warn_msg .= "# ***Accessions for which this symbol is not the primary symbol will be skipped.***\n";
     }
-    $do_nosym = 1; 
+    $do_nosyn = 1; 
   }
 }
 
@@ -390,13 +390,12 @@ my $keep_going      = 1; # we set this to '0' after this step UNLESS
 while($keep_going) { 
   my $query_symbol = $symbol;
   if($query_symbol =~ m/\~/) { 
-    $warn_msg = "WARNING: replacing ~ characters in input symbol with spaces\n";
+    $warn_msg = "# WARNING: replacing ~ characters in input symbol with spaces\n";
     PrintToStdoutAndFile($warn_msg, $sum_FH);
     $query_symbol =~ s/\~/ /g;
   }
   $query = "\"$query_symbol [GENE]\"";
-  printf("$query\n");
-  exit 0;
+
   if($do_acclist_mode) { 
     $cmd  = "cat $acclist_file | sort > $allacc_file";
     $desc = "Sorted_accessions_from_file_$acclist_file";
@@ -449,6 +448,9 @@ while($keep_going) {
 # Step 1.2: Remove suppressed accessions (according to idstat) 
 ##############################################################
 my $acc_file         = $out_dir . $symbol . ".acc";
+if($do_nosyn) { 
+  $acc_file = $out_dir . $symbol . ".withsym.acc";
+}
 my $acc_file_lost    = $acc_file . ".lost";
 my $acc_file_created = $acc_file . ".created";
 if($do_nt) { $desc  = "Non-suppressed_nucleotide_accessions_fetched_from_nuccore_database"; }
@@ -481,14 +483,14 @@ if($errmsg ne "") { die $errmsg; }
 
 
 ###################################################################################
-# Optional Step: If -nosym: remove accessions which have $symbol as a synonym
+# Optional Step: If -nosyn: remove accessions which have $symbol as a synonym
 # only keeping those for which $symbol is the primary symbol.
 ###################################################################################
-if($do_nosym) { 
+if($do_nosyn) { 
   my $tmp_start_secs = ($seconds + ($microseconds / 1000000.));
 
   my $database = ($do_nt) ? "nuccore" : "protein";
-  my $new_acc_file         = $out_dir . $symbol . ".nosym.acc";
+  my $new_acc_file         = $out_dir . $symbol . ".acc";
   my $new_acc_file_lost    = $new_acc_file . ".lost";
   my $new_acc_file_created = $new_acc_file . ".created";
 
@@ -522,13 +524,13 @@ if($do_nosym) {
       chomp $line;
       my @elA = split(/\t/, $line);
       my $nel = scalar(@elA);
-      $elA[1] =~ s/\;$//; # remove trailing semicolon if one exists;
-      my $cap_el = Capitalize($elA[1]);
       if($nel > 2) { 
         die "ERROR more than one match in $file for $elA[0]"; 
       }
       elsif($nel == 2) { 
-        if($cap_el eq $cap_symbol) { 
+        $elA[1] =~ s/\;$//; # remove trailing semicolon if one exists;
+        my $cap_el = Capitalize($elA[1]);
+        if($cap_el eq $cap_no_tilde_symbol) { 
           $keepme_H{$elA[0]} = 1; 
         }
       }
@@ -549,7 +551,7 @@ if($do_nosym) {
       for(my $i = 1; $i < $nel; $i++) { # note we start at '1', not '0'
         $elA[$i] =~ s/\;$//; # remove trailing semicolon if one exists;
         my $cap_el = Capitalize($elA[$i]);
-        if($cap_el eq $cap_symbol) { 
+        if($cap_el eq $cap_no_tilde_symbol) { 
           $iamsyn_H{$elA[0]} = 1; 
         }
       }
@@ -566,7 +568,10 @@ if($do_nosym) {
       print OUT $acc . "\n"; 
     }
     elsif(! exists $iamsyn_H{$acc}) { 
-      die "ERROR $acc does not have $symbol as a primary symbol or an alias"; 
+      # this is okay, just skip it
+      ;
+      # alternative approach would be:
+      # die "ERROR $acc does not have $symbol as a primary symbol or an alias"; 
     }
   }
   close(IN);
@@ -1494,7 +1499,6 @@ sub Capitalize {
 # Args:       $in_file: the file to check in for $in_symbol
 #             $in_symbol: string to look for
 # Returns:    '1' if $in_symbol is found in $in_file, else '0'
-# Dies:       if there's more than one token in $in_file
 sub checkFileForSymbol {
   my $sub_name  = "checkFileForSymbol()";
   my $nargs_exp = 2;
