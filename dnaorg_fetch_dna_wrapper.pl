@@ -51,6 +51,7 @@ $usage .= " OPTIONS THAT ENABLE ALTERNATE MODES:\n";
 $usage .= "  -plist  : <symbol> is really a list of protein accessions,    requires -d option too\n";
 $usage .= "  -ntlist : <symbol> is really a list of nucleotide accessions, requires -d option too\n";
 $usage .= "  -num    : determine number of matching protein/nucleotide accessions, then exit\n";
+$usage .= "  -gene   : output information on annotated genes in each record, then exit\n";
 $usage .= "\n";
 $usage .= " OPTIONS THAT AFFECT FAILURE/WARNING OF PRE-DETERMINED SYMBOLS:\n";
 $usage .= "  -ffile <f> : fail          if a symbol listed in <f> is used as input symbol [default: $df_ffile]\n";
@@ -100,9 +101,9 @@ my $do_acclist_mode = 0;     # set to '1' if either -plist or -ntlist used
 
 # different 'modes', if all are false we run in default mode
 my $do_num_mode      = 0; # set to '1' if -numonly option used.
+my $do_gene_mode     = 0; # set to '1' if -gene option used.
 my $do_plist_mode    = 0; # set to '1' if -plist option used.
 my $do_ntlist_mode   = 0; # set to '1' if -ntlist option used.
-
 
 &GetOptions( "f"       => \$do_force, 
              "v"       => \$be_verbose,
@@ -112,6 +113,7 @@ my $do_ntlist_mode   = 0; # set to '1' if -ntlist option used.
              "plist"   => \$do_plist_mode,
              "ntlist"  => \$do_ntlist_mode,
              "num"     => \$do_num_mode,
+             "gene"    => \$do_gene_mode,
              "ffile=s" => \$ffile,
              "sfile=s" => \$sfile,
              "noffile" => \$no_ffile,
@@ -165,6 +167,10 @@ if($do_num_mode) {
   $opts_used_short .= "-num ";
   $opts_used_long  .= "# option:  determining number of matching protein accessions, then exiting [-num]\n"; 
 }
+if($do_gene_mode) { 
+  $opts_used_short .= "-gene ";
+  $opts_used_long  .= "# option:  outputting annotated gene information, then exiting [-gene]\n"; 
+}
 if(defined $ffile) { 
   $opts_used_short .= "-ffile $ffile ";
   $opts_used_long  .= "# option:  list file with symbols to fail for: $ffile [-ffile]\n"; 
@@ -213,6 +219,9 @@ if($do_plist_mode || $do_ntlist_mode) {
   if(defined $sfile) { 
     die "ERROR the -plist and -ntlist options are incompatible with -sfile";
   }
+}
+if($do_num_mode && $do_gene_mode) { 
+  die "ERROR the -gene option is incompatible with -num";
 }
 if($do_plist_mode && $do_ntlist_mode) { 
   die "ERROR the -plist and -ntlist options are incompatible"; 
@@ -559,7 +568,7 @@ if($do_nosyn) {
     close(IN);
   }
 
-  # all accessions should either exist in %keepme_H or %iamsyn_H
+  # create a file that is a list of accessions for which $symbol is primary
   open(IN, $acc_file) || die "ERROR unable to open $acc_file for reading";
   open(OUT, ">" . $new_acc_file) || die "ERROR unable to open $new_acc_file for writing";
   while(my $acc = <IN>) { 
@@ -598,11 +607,11 @@ if($do_nosyn) {
   PrintToStdoutAndFile(sprintf("%-*s  %10d  %10d  %10s  %10.1f  %s\n", $desc_w, $desc, GetNumLinesInFile($new_acc_file), $nlost, $ncreated, $tmp_end_secs - $tmp_start_secs, $new_acc_file), $sum_FH);
 
   $acc_file = $new_acc_file; # rename $acc_file for subsequent steps
-}
+} # end of 'if($do_nosyn)'
 
-###################################################################################
-# Exit if we're in number-only mode, or we don't have any accessions left
-###################################################################################
+#########################################################################################
+# Exit if we're in number-only mode, gene info mode, or we don't have any accessions left
+#########################################################################################
 if($do_num_mode) { 
   PrintToStdoutAndFile("#\n", $sum_FH);
   my $num_records = GetNumLinesInFile($acc_file) - $nlost;
@@ -618,6 +627,53 @@ if($do_num_mode) {
 if(GetNumLinesInFile($acc_file) == 0) { # this is an okay result
   PrintToStdoutAndFile("#\n", $sum_FH);
   PrintToStdoutAndFile("# No (non-suppressed) accessions fetched. Exiting.\n", $sum_FH);
+  Conclude($start_secs, $do_nt, $sum_FH, $log_FH);
+  exit 0;
+}
+if($do_gene_mode) { 
+  my $gene_info_file = $out_dir . $symbol . ".geneinfo";
+  # we need to formulate queries for every N accessions, we can't use epost like we do elsewhere to post entire list of accessions
+  my $naccn_per_query = 5;
+  my $nqueries = 0;
+  my $cmd_concat = "";
+  my $naccn = 0;
+  my $output_char;
+  my $cur_query = "";
+  my $nsecs = 0.;
+  open(OUT, ">" . $gene_info_file) || die "ERROR unable to open $gene_info_file";
+  print OUT "#taxid gene-id gene-name gene-aliases accession chrStart chrEnd (sep character is a tab)\n";
+  close(OUT);
+
+  open(IN, $acc_file) || die "ERROR unable to open $acc_file"; 
+  while(my $line = <IN>) { 
+    if($line !~ m/\#/) { 
+      chomp $line;
+      my $cur_accn = $line;
+      $cur_accn =~ s/^\s+//; # remove leading whitespace
+      $cur_accn =~ s/\s+$//; # remove trailing whitespace
+      $cur_query .= "$cur_accn\\\|";
+      $naccn++;
+      if($naccn == $naccn_per_query) { # perform the query:
+        $cur_query =~ s/\\\|$//; # remove final '|';
+        $cmd = "esearch -query $cur_query -db gene | efetch -format docsum | xtract -pattern DocumentSummary -group Organism -element TaxID -group DocumentSummary -element Id -element Name -block GenomicInfoType -element ChrAccVer -element ChrStart -element ChrStop >> $gene_info_file";
+        $nsecs += RunCommand($cmd, $be_verbose, $cmd_FH);
+        $cmd_concat .= $cmd . ";";
+        $nqueries++;
+        $cur_query = "";
+        $naccn = 0;
+      }
+    }
+  }
+  if($naccn > 0) { 
+    $cur_query =~ s/\\\|$//; # remove final '|';
+    $cmd = "esearch -query $cur_query -db gene | efetch -format docsum | xtract -pattern DocumentSummary -group Organism -element TaxID -group DocumentSummary -element Id -element Name -block GenomicInfoType -element ChrAccVer -element ChrStart -element ChrStop >> $gene_info_file";
+    $nsecs += RunCommand($cmd, $be_verbose, $cmd_FH);
+  }
+  OutputFileInfo($gene_info_file,  "Tabular Gene info for all accessions in $acc_file", $cmd_concat, $log_FH);
+
+  $desc = "Gene_database_records_which_link_to_all_accessions";
+  PrintToStdoutAndFile(sprintf("%-*s  %10d  %10s  %10s  %10.1f  %s\n", $desc_w, $desc, GetNumLinesInFile($gene_info_file)-1, "N/A", "N/A", $nsecs, $gene_info_file), $sum_FH);
+
   Conclude($start_secs, $do_nt, $sum_FH, $log_FH);
   exit 0;
 }
