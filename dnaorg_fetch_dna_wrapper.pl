@@ -60,8 +60,9 @@ $usage .= "  -noffile   : do not fail for symbols listed in a file\n";
 $usage .= "  -nosfile   : do not skip synonyms for symbols listed in a file\n";
 $usage .= "\n";
 $usage .= " EXPERIMENTAL/ADVANCED OPTIONS:\n";
-$usage .= "  -up     : additional run experimental code for fetching non-CDS UniProt CDS via xrefs\n";
-$usage .= "  -old    : use extract_fasta_multi_exon instead of esl-fetch-cds.pl\n";
+$usage .= "  -up        : additional run experimental code for fetching non-CDS UniProt CDS via xrefs\n";
+$usage .= "  -old       : use extract_fasta_multi_exon instead of esl-fetch-cds.pl\n";
+$usage .= "  -ngene <n> : with -gene, specify number of accessions per edirect query for gene info\n";
 $usage .= "\n";
 $usage .= "\n";
 $usage .= " This script will create a directory called <symbol> (for modes 1 and 2)\n";
@@ -90,6 +91,9 @@ my $do_nt           = 0;     # set to '1' if EITHER -nt used or we switch to sea
 my $do_not_try_nt   = 0;     # set to '1' if -notnt option is used
 my $do_nosyn        = 0;     # set to '1' if -nosyn option is used
 my $do_old          = 0;     # set to '1' with -old
+my $do_allgene      = 0;     # set to '1' if -allgene option used.
+my $ngene           = undef; # set to value if -ngene used
+my $df_ngene        = 5;     # default value to use for $ngene if -ngene *not* used
 my $ffile           = undef; # set to value if -ffile used
 my $sfile           = undef; # set to value if -sfile used
 my $no_ffile        = 0;     # set to '1' if -noffile used
@@ -120,7 +124,9 @@ my $do_ntlist_mode   = 0; # set to '1' if -ntlist option used.
              "nosfile" => \$no_sfile,
              "up"      => \$do_uniprot_xref,
              "nosyn"   => \$do_nosyn,
-             "old"     => \$do_old);
+             "old"     => \$do_old, 
+             "allgene" => \$do_allgene,
+             "ngene=s" => \$ngene);
 
 if(scalar(@ARGV) != 1) { die $usage; }
 my ($symbol) = (@ARGV);
@@ -195,6 +201,14 @@ if($do_old) {
   $opts_used_short .= "-old ";
   $opts_used_long  .= "# option:  using old strategy (extract_fasta_multi_exon) [-old]\n"; 
 }
+if($do_allgene) { 
+  $opts_used_short .= "-allgene ";
+  $opts_used_long  .= "# option:  fetching info on all linked gene entries, not just seq-specific ones [-allgene]\n"; 
+}  
+if(defined $ngene) { 
+  $opts_used_short .= "-ngene $ngene ";
+  $opts_used_long  .= "# option:  specifying number of accessions for edirect gene queries as $ngene [-ngene]\n";
+}
 
 # check for incompatible option combinations:
 if($do_plist_mode || $do_ntlist_mode) { 
@@ -235,10 +249,16 @@ if($do_nt_userset) {
   }
 }
 if(defined $ffile && $no_ffile) { 
-    die "ERROR the -ffile and -noffile options are incompatible"; 
+  die "ERROR the -ffile and -noffile options are incompatible"; 
 }
 if(defined $sfile && $no_sfile) { 
-    die "ERROR the -sfile and -nosfile options are incompatible"; 
+  die "ERROR the -sfile and -nosfile options are incompatible"; 
+}
+if(defined $ngene && (! $do_gene_mode)) { 
+  die "ERROR -ngene only makes sense in combination with the -gene option";
+}
+if(defined $do_allgene && (! $do_gene_mode)) { 
+  die "ERROR -agene only makes sense in combination with the -gene option";
 }
 
 my $exec_dir  = "/panfs/pan1/dnaorg/programs";
@@ -257,6 +277,7 @@ my $using_df_ffile = 0; # set to '1' if --ffile not used
 my $using_df_sfile = 0; # set to '1' if --sfile not used
 if(! defined $ffile) { $ffile = $df_ffile; $using_df_ffile = 1; }
 if(! defined $sfile) { $sfile = $df_sfile; $using_df_sfile = 1; }
+if(! defined $ngene) { $ngene = $df_ngene; }
 
 $do_acclist_mode = ($do_plist_mode || $do_ntlist_mode) ? 1 : 0; # $do_acclist_mode is true if either -plist or -ntlist used
 $do_nt           = ($do_nt_userset || $do_ntlist_mode) ? 1 : 0;
@@ -428,7 +449,7 @@ while($keep_going) {
   $ncreated    = $nlines;
   PrintToStdoutAndFile(sprintf("%-*s  %10d  %10d  %10d  %10.1f  %s\n", $desc_w, $desc, GetNumLinesInFile($allacc_file), $nlost, $ncreated, $nsecs, $allacc_file), $sum_FH);
   if($ncreated == 0) { # this is an okay result
-    if((! $do_nt) && (! $do_not_try_nt)) { # the one case in which we retry the query in nuccore
+   if((! $do_nt) && (! $do_not_try_nt)) { # the one case in which we retry the query in nuccore
       $do_nt      = 1;
       $keep_going = 1; 
     }
@@ -443,7 +464,7 @@ while($keep_going) {
       else { 
         PrintToStdoutAndFile("# No accessions fetched.\n# Exiting.\n", $sum_FH);
       }        
-      Conclude($start_secs, -1, $sum_FH, $log_FH);
+      Conclude($start_secs, -1, $sum_FH, $log_FH, $cmd_FH);
       exit 0;
     }
   }
@@ -621,60 +642,96 @@ if($do_num_mode) {
   else { 
     PrintToStdoutAndFile("Number_of_protein_records: $num_records\n", $sum_FH);
   }    
-  Conclude($start_secs, $do_nt, $sum_FH, $log_FH);
+  Conclude($start_secs, $do_nt, $sum_FH, $log_FH, $cmd_FH);
   exit 0;
 }
 if(GetNumLinesInFile($acc_file) == 0) { # this is an okay result
   PrintToStdoutAndFile("#\n", $sum_FH);
   PrintToStdoutAndFile("# No (non-suppressed) accessions fetched. Exiting.\n", $sum_FH);
-  Conclude($start_secs, $do_nt, $sum_FH, $log_FH);
+  Conclude($start_secs, $do_nt, $sum_FH, $log_FH, $cmd_FH);
   exit 0;
 }
 if($do_gene_mode) { 
-  my $gene_info_file = $out_dir . $symbol . ".geneinfo";
   # we need to formulate queries for every N accessions, we can't use epost like we do elsewhere to post entire list of accessions
-  my $naccn_per_query = 5;
-  my $nqueries = 0;
-  my $cmd_concat = "";
+  my $gene_cmd;
+  my $tax_cmd;
+  my $gene_cmd_concat = ""; # concatenated commands for fetching gene info
+  my $tax_cmd_concat  = ""; # concatenated commands for fetching taxid info
   my $naccn = 0;
   my $output_char;
-  my $cur_query = "";
   my $nsecs = 0.;
-  open(OUT, ">" . $gene_info_file) || die "ERROR unable to open $gene_info_file";
-  print OUT "#taxid gene-id gene-name gene-aliases accession chrStart chrEnd (sep character is a tab)\n";
-  close(OUT);
 
-  open(IN, $acc_file) || die "ERROR unable to open $acc_file"; 
-  while(my $line = <IN>) { 
+  # print first line of each file
+  my $geneinfo_file = $out_dir . $symbol . ".geneinfo";
+  my $taxinfo_file = $out_dir . $symbol . ".taxinfo";
+  my $taxinfo_file_created = $taxinfo_file . ".created";
+  my $taxinfo_file_lost    = $taxinfo_file . ".lost";
+  my $geneinfo_FH;
+  my $taxinfo_FH;
+
+  open($geneinfo_FH, ">" . $geneinfo_file) || die "ERROR unable to open $geneinfo_file";
+  print $geneinfo_FH "#taxid gene-id gene-name gene-aliases accession chrStart chrEnd (sep character is a tab, lines beginning with '#' are comments)\n";
+
+  open($taxinfo_FH, ">" . $taxinfo_file) || die "ERROR unable to open $taxinfo_file";
+  print $taxinfo_FH "#accession db_xref (sep character is a tab)\n";
+
+  my $tmp_out_root   = $out_dir . $symbol . ".tmp";
+  my @accn_A = ();  # array of accessions we're currently working on
+  my $ncmd = 0;
+
+  open(ACC, $acc_file) || die "ERROR unable to open $acc_file"; 
+  while(my $line = <ACC>) { 
     if($line !~ m/\#/) { 
       chomp $line;
-      my $cur_accn = $line;
-      $cur_accn =~ s/^\s+//; # remove leading whitespace
-      $cur_accn =~ s/\s+$//; # remove trailing whitespace
-      $cur_query .= "$cur_accn\\\|";
+      my $accn = $line;
+      $accn =~ s/^\s+//; # remove leading whitespace
+      $accn =~ s/\s+$//; # remove trailing whitespace
       $naccn++;
-      if($naccn == $naccn_per_query) { # perform the query:
-        $cur_query =~ s/\\\|$//; # remove final '|';
-        $cmd = "esearch -query $cur_query -db gene | efetch -format docsum | xtract -pattern DocumentSummary -group Organism -element TaxID -group DocumentSummary -element Id -element Name -block GenomicInfoType -element ChrAccVer -element ChrStart -element ChrStop >> $gene_info_file";
-        $nsecs += RunCommand($cmd, $be_verbose, $cmd_FH);
-        $cmd_concat .= $cmd . ";";
-        $nqueries++;
-        $cur_query = "";
+      push(@accn_A, $accn);
+      if($naccn == $ngene) { # $ngene was set above as $df_ngene, or possibly with -ngene 
+        ($tax_cmd, $gene_cmd, $nsecs) = updateTaxAndGeneinfo(\@accn_A, $do_allgene, $tmp_out_root, $taxinfo_FH, $geneinfo_FH, $cmd_FH);
+        $ncmd++;
+        $tax_cmd_concat .= $tax_cmd . ";";
+        $gene_cmd_concat .= $gene_cmd .";";
         $naccn = 0;
+        @accn_A = ();
       }
     }
-  }
+  } # end of 'while($line = <IN>)'
+  # and don't forget to do the remaining accessions not yet processed
   if($naccn > 0) { 
-    $cur_query =~ s/\\\|$//; # remove final '|';
-    $cmd = "esearch -query $cur_query -db gene | efetch -format docsum | xtract -pattern DocumentSummary -group Organism -element TaxID -group DocumentSummary -element Id -element Name -block GenomicInfoType -element ChrAccVer -element ChrStart -element ChrStop >> $gene_info_file";
-    $nsecs += RunCommand($cmd, $be_verbose, $cmd_FH);
+    ($tax_cmd, $gene_cmd, $nsecs) = updateTaxAndGeneinfo(\@accn_A, $do_allgene, $tmp_out_root, $taxinfo_FH, $geneinfo_FH, $cmd_FH);
+    $ncmd++;
+    $tax_cmd_concat .= $tax_cmd . ";";
+    $gene_cmd_concat .= $gene_cmd .";";
   }
-  OutputFileInfo($gene_info_file,  "Tabular Gene info for all accessions in $acc_file", $cmd_concat, $log_FH);
+  close($geneinfo_FH);
+  close($taxinfo_FH);
+  OutputFileInfo($taxinfo_file,   "Tabular Taxid info for all accessions in $acc_file", $tax_cmd_concat, $log_FH);
+  OutputFileInfo($geneinfo_file,  "Tabular Gene info for all accessions in $acc_file", $gene_cmd_concat, $log_FH);
 
-  $desc = "Gene_database_records_which_link_to_all_accessions";
-  PrintToStdoutAndFile(sprintf("%-*s  %10d  %10s  %10s  %10.1f  %s\n", $desc_w, $desc, GetNumLinesInFile($gene_info_file)-1, "N/A", "N/A", $nsecs, $gene_info_file), $sum_FH);
+  # determine any lost/created tax ids 
+  $cmd = "awk '{ print \$1 }' $taxinfo_file | grep -v ^\# | sed 's/\\.[0-9]*//' | sort | comm -2 -3 - $acc_file > $taxinfo_file_created";
+  RunCommand($cmd, $be_verbose, $cmd_FH);
+  $cmd = "awk '{ print \$1 }' $taxinfo_file | grep -v ^\# | sed 's/\\.[0-9]*//' | sort | comm -2 -3 $acc_file - > $taxinfo_file_lost";
+  RunCommand($cmd, $be_verbose, $cmd_FH);
+  
+  ($nlost, $ncreated, $errmsg) = CheckLostAndCreated($taxinfo_file_lost, 0, $taxinfo_file_created, 0); # '0' are max allowed lines in each of these files
+  
+  $desc = "Tax_ids_for_all_accessions";
+  PrintToStdoutAndFile(sprintf("%-*s  %10d  %10s  %10s  %10.1f  %s\n", $desc_w, $desc, GetNumLinesInFile($taxinfo_file)-1, $nlost, $ncreated, $nsecs, $taxinfo_file), $sum_FH);
 
-  Conclude($start_secs, $do_nt, $sum_FH, $log_FH);
+  if($do_allgene) { 
+    $desc = "Gene_database_records_which_link_to_all_accessions";
+  }
+  else { 
+    $desc = "Gene_database_records_which_exist_in_all_accessions";
+  }
+  PrintToStdoutAndFile(sprintf("%-*s  %10d  %10s  %10s  %10.1f  %s\n", $desc_w, $desc, GetNumLinesInFile($geneinfo_file)-($ncmd+1), "N/A", "N/A", $nsecs, $geneinfo_file), $sum_FH);
+
+  if($errmsg ne "") { die $errmsg; }
+
+  Conclude($start_secs, $do_nt, $sum_FH, $log_FH, $cmd_FH);
   exit 0;
 }
 
@@ -1235,7 +1292,7 @@ if(! $do_nt) {
 ##########
 # Conclude
 ##########
-Conclude($start_secs, $do_nt, $sum_FH, $log_FH);
+Conclude($start_secs, $do_nt, $sum_FH, $log_FH, $cmd_FH);
 
 exit 0;
 
@@ -1581,16 +1638,142 @@ sub checkFileForSymbol {
   return 0; # didn't find a match
 }
 
+# Subroutine: updateTaxAndGeneinfo()
+# Purpose:    Given a ref to an array of accessions, use edirect to output Gene db information
+#             linked to those accessions, as well as taxid information.
+# Args:       $accn_AR:       ref to array of accessions
+#             $do_allgene:    '1' if -allgene flag used, we'll output all linked Gene info
+#                             '0' to only output info for Genes annotated in accessions in $accnAR
+#             $tmp_out_root: name for temporary output files we'll delete before leaving
+#             $taxinfo_FH:   file handle to output taxid info to
+#             $geneinfo_FH:  file handle to output gene info to 
+#             $cmd_FH:       file handle to output command info to
+# Returns:    2 values:
+#             1) geneinfo command performed in this subroutine
+#             3) number of seconds spent in this subroutine including time required for 
+#                edirect commands
+sub updateTaxAndGeneinfo {
+  my $sub_name  = "updateTaxAndGeneinfo()";
+  my $nargs_exp = 6;
+  if(scalar(@_) != $nargs_exp) { die "ERROR $sub_name entered with wrong number of input args"; }
+  
+  my ($accn_AR, $do_allgene, $tmp_out_root, $taxinfo_FH, $geneinfo_FH, $cmd_FH) = (@_);
+  my ($seconds, $microseconds) = gettimeofday();
+  my $start_secs = ($seconds + ($microseconds / 1000000.));
+
+  my %accn_H = (); # key accession, used to lookup accessions
+  my %tax_H  = (); # key accession, value taxid for that accession
+  my $query  = "\""; # all accessions concatenated together
+  my $tmp_tax_info_file = $tmp_out_root . ".taxinfo";
+  my $tmp_gene_info_file = $tmp_out_root . ".geneinfo";
+
+  my $naccn = scalar(@{$accn_AR});
+  for(my $i = 0; $i < $naccn; $i++) { 
+    my $accn = $accn_AR->[$i];
+    $tax_H{$accn} = "";
+    $accn_H{$accn} = 1;
+    if($i > 0) { $query .= " OR "; }
+    $query .= "$accn [accession]";
+  }
+  $query .= "\"";
+
+  # first, determine the tax ids of each of the accessions
+  my $tax_cmd = "esearch -query $query -db nuccore | efetch -format gbc | xtract -insd source db_xref | grep . > $tmp_tax_info_file";
+  RunCommand($tax_cmd, $be_verbose, $cmd_FH);
+  # we need to parse this file to figure out what the allowable tax ids are for the geneinfo file
+  open(IN,  $tmp_tax_info_file)    || die "ERROR unable to open $tmp_tax_info_file for reading"; 
+  while(my $taxline = <IN>) { 
+    chomp $taxline;
+    #printf("taxinfo line: $taxline");
+    # A07116.1	taxon:11676
+    # OR
+    # NC_002501.1	ATCC:VR-896	taxon:114102
+    my @elA = split(/\t/, $taxline);
+    my $found_taxon = 0;
+    my $taxid = "";
+    my $tax_accn = $elA[0];
+    $tax_accn =~ s/\.[0-9]*$//; # strip version
+    for(my $i = 1; $i < scalar(@elA); $i++) { 
+      if($elA[$i] =~ /^taxon\:(\d+)/) { 
+          $taxid = $1;
+      }
+    }
+    if($taxid eq "") { 
+      die "ERROR unable to parse line when trying to find taxid info: $taxline\n";
+    }
+    if(! exists $tax_H{$tax_accn}) { die "ERROR found unexpected accession $tax_accn returned by edirect command: $tax_cmd"; }
+    if($tax_H{$tax_accn} eq "") { 
+      # we only want to print this line if it's not a duplicate; some records have taxid's stored twice 
+      # and the esearch | efetch | xtract command above will return 2 identical lines.
+      print $taxinfo_FH $taxline . "\n"; # output this line to our master file of all taxinfo
+    }
+    $tax_H{$tax_accn} = $taxid;
+    } # end of 'while($taxline = <IN>)'
+  close(IN);
+  
+  # ensure we have tax ids for all accessions
+  foreach my $tax_accn (keys %tax_H) { 
+    if($tax_H{$tax_accn} eq "") { 
+      die "ERROR did not find taxid information for accession $tax_accn using edirect command: $tax_cmd"; 
+    }
+  }
+
+  # now get the gene information
+  my $gene_cmd = "esearch -query $query -db gene | efetch -format docsum | xtract -pattern DocumentSummary -group DocumentSummary -element Status -group Organism -element TaxID -group DocumentSummary -element Id -element Name -block GenomicInfoType -element ChrAccVer -element ChrStart -element ChrStop | grep -P \"\^0\\t\" | sort -k 2 > $tmp_gene_info_file"; 
+  # the 'grep -P "^0\\t"' command toward the end specifies that only those records with status==0 (live gene records) will be kept
+  # the final 'sort' makes it so the command doesn't return an error status if nothing survives past the grep
+
+  $nsecs += RunCommand($gene_cmd, $be_verbose, $cmd_FH);
+  print $geneinfo_FH "# Running cmd: $gene_cmd\n";
+  # we need to parse this file to keep only allowable tax ids
+  open(IN,  $tmp_gene_info_file)    || die "ERROR unable to open $tmp_gene_info_file for reading"; 
+  while(my $geneline = <IN>) { 
+    if($geneline =~ s/^0\t//) { 
+      chomp $geneline;
+      my $output_this_gene = 0;
+      if($do_allgene) { 
+        $output_this_gene = 1;
+      }
+      else { # ! $do_allgene
+        # determine the accession for this gene
+        my @elA = split(/\t/, $geneline);
+        ##taxid gene-id gene-name gene-aliases accession chrStart chrEnd (sep character is a tab, lines beginning with '#' are comments)
+        #10506	10971099	A329bR	NC_000852.5	166039	166224
+        if(scalar(@elA) < 6) { die "ERROR parsing geneinfo line $geneline, at least 6 tab-delimited tokens expected: $geneline"; }
+        my $cur_accn = $elA[3];
+        $cur_accn =~ s/\.[0-9]*$//; # strip version
+        if(exists $accn_H{$cur_accn}) { 
+          $output_this_gene = 1;
+        }
+      }
+      if($output_this_gene) { 
+        print $geneinfo_FH $geneline . "\n";
+      }
+    } 
+    else { 
+      die "ERROR geneinfo line did not begin with '0': $geneline\n";
+    }
+  }
+
+  ($seconds, $microseconds) = gettimeofday();
+  my $end_secs = ($seconds + ($microseconds / 1000000.));
+
+  if(-e $tmp_tax_info_file)  { unlink $tmp_tax_info_file; }
+  if(-e $tmp_gene_info_file) { unlink $tmp_gene_info_file; }
+
+  return($tax_cmd, $gene_cmd, ($end_secs - $start_secs));
+}
 # Subroutine: Conclude()
 # Purpose:    Print out conclusion text and close file handles in preparation for exit.
 # Args:       $start_secs: number of seconds since epoch and start of this script running
 #             $do_nt:      '1' if we're in nucleotide mode, '0' if in protein mode, -1 if no records fetched
 #             $sum_FH:     file handle for summary file
 #             $log_FH:     file handle for log file
+#             $cmd_FH:     file handle for command file
 # Returns:    void
 sub Conclude {
   my $sub_name  = "Conclude()";
-  my $nargs_exp = 4;
+  my $nargs_exp = 5;
   if(scalar(@_) != $nargs_exp) { die "ERROR $sub_name entered with wrong number of input args"; }
   
   my ($start_seconds, $do_nt, $sum_FH, $log_FH) = (@_);
@@ -1614,5 +1797,8 @@ sub Conclude {
   
   close $log_FH;
   close $sum_FH;
+  close $cmd_FH;
   return;
 }
+
+
