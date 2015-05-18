@@ -48,10 +48,11 @@ $usage .= "  -notnt  : if zero matches for symbol in the protein db, DO NOT retr
 $usage .= "  -nosyn  : only include records for which the symbol is the primary symbol, not the synonym\n";
 $usage .= "\n";
 $usage .= " OPTIONS THAT ENABLE ALTERNATE MODES:\n";
-$usage .= "  -plist  : <symbol> is really a list of protein accessions,    requires -d option too\n";
-$usage .= "  -ntlist : <symbol> is really a list of nucleotide accessions, requires -d option too\n";
-$usage .= "  -num    : determine number of matching protein/nucleotide accessions, then exit\n";
-$usage .= "  -gene   : output information on annotated genes in each record, then exit\n";
+$usage .= "  -plist    : <symbol> is really a list of protein accessions,    requires -d option too\n";
+$usage .= "  -ntlist   : <symbol> is really a list of nucleotide accessions, requires -d option too\n";
+$usage .= "  -num      : determine number of matching protein/nucleotide accessions, then exit\n";
+$usage .= "  -geneinfo : output information on annotated genes in each record, then exit\n";
+$usage .= "  -ftable   : output feature table for each record, then exit\n";
 $usage .= "\n";
 $usage .= " OPTIONS THAT AFFECT FAILURE/WARNING OF PRE-DETERMINED SYMBOLS:\n";
 $usage .= "  -ffile <f> : fail          if a symbol listed in <f> is used as input symbol [default: $df_ffile]\n";
@@ -62,7 +63,7 @@ $usage .= "\n";
 $usage .= " EXPERIMENTAL/ADVANCED OPTIONS:\n";
 $usage .= "  -up        : additional run experimental code for fetching non-CDS UniProt CDS via xrefs\n";
 $usage .= "  -old       : use extract_fasta_multi_exon instead of esl-fetch-cds.pl\n";
-$usage .= "  -ngene <n> : with -gene, specify number of accessions per edirect query for gene info\n";
+$usage .= "  -ngene <n> : with -geneinfo, specify number of accessions per edirect query for gene info\n";
 $usage .= "\n";
 $usage .= "\n";
 $usage .= " This script will create a directory called <symbol> (for modes 1 and 2)\n";
@@ -105,31 +106,34 @@ my $do_acclist_mode = 0;     # set to '1' if either -plist or -ntlist used
 
 # different 'modes', if all are false we run in default mode
 my $do_num_mode      = 0; # set to '1' if -numonly option used.
-my $do_gene_mode     = 0; # set to '1' if -gene option used.
+my $do_geneinfo_mode = 0; # set to '1' if -geneinfo option used.
+my $do_ftable_mode   = 0; # set to '1' if -ftable option used.
 my $do_plist_mode    = 0; # set to '1' if -plist option used.
 my $do_ntlist_mode   = 0; # set to '1' if -ntlist option used.
 
-&GetOptions( "f"       => \$do_force, 
-             "v"       => \$be_verbose,
-             "d=s"     => \$out_dir,
-             "nt"      => \$do_nt_userset,
-             "notnt"   => \$do_not_try_nt,
-             "plist"   => \$do_plist_mode,
-             "ntlist"  => \$do_ntlist_mode,
-             "num"     => \$do_num_mode,
-             "gene"    => \$do_gene_mode,
-             "ffile=s" => \$ffile,
-             "sfile=s" => \$sfile,
-             "noffile" => \$no_ffile,
-             "nosfile" => \$no_sfile,
-             "up"      => \$do_uniprot_xref,
-             "nosyn"   => \$do_nosyn,
-             "old"     => \$do_old, 
-             "allgene" => \$do_allgene,
-             "ngene=s" => \$ngene);
+&GetOptions( "f"        => \$do_force, 
+             "v"        => \$be_verbose,
+             "d=s"      => \$out_dir,
+             "nt"       => \$do_nt_userset,
+             "notnt"    => \$do_not_try_nt,
+             "plist"    => \$do_plist_mode,
+             "ntlist"   => \$do_ntlist_mode,
+             "num"      => \$do_num_mode,
+             "geneinfo" => \$do_geneinfo_mode,
+             "ftable"   => \$do_ftable_mode,
+             "ffile=s"  => \$ffile,
+             "sfile=s"  => \$sfile,
+             "noffile"  => \$no_ffile,
+             "nosfile"  => \$no_sfile,
+             "up"       => \$do_uniprot_xref,
+             "nosyn"    => \$do_nosyn,
+             "old"      => \$do_old, 
+             "allgene"  => \$do_allgene,
+             "ngene=s"  => \$ngene);
 
 if(scalar(@ARGV) != 1) { die $usage; }
 my ($symbol) = (@ARGV);
+my $argv_1   = $symbol;
 my $cap_symbol = Capitalize($symbol);
 my $cap_no_tilde_symbol = $cap_symbol;
 $cap_no_tilde_symbol =~ s/\~/ /g;
@@ -173,9 +177,13 @@ if($do_num_mode) {
   $opts_used_short .= "-num ";
   $opts_used_long  .= "# option:  determining number of matching protein accessions, then exiting [-num]\n"; 
 }
-if($do_gene_mode) { 
-  $opts_used_short .= "-gene ";
-  $opts_used_long  .= "# option:  outputting annotated gene information, then exiting [-gene]\n"; 
+if($do_geneinfo_mode) { 
+  $opts_used_short .= "-geneinfo ";
+  $opts_used_long  .= "# option:  outputting annotated gene information, then exiting [-geneinfo]\n"; 
+}
+if($do_ftable_mode) { 
+  $opts_used_short .= "-ftable ";
+  $opts_used_long  .= "# option:  outputting feature table information, then exiting [-ftable]\n"; 
 }
 if(defined $ffile) { 
   $opts_used_short .= "-ffile $ffile ";
@@ -234,7 +242,10 @@ if($do_plist_mode || $do_ntlist_mode) {
     die "ERROR the -plist and -ntlist options are incompatible with -sfile";
   }
 }
-if($do_num_mode && $do_gene_mode) { 
+if($do_num_mode && $do_geneinfo_mode) { 
+  die "ERROR the -gene option is incompatible with -num";
+}
+if($do_num_mode && $do_ftable_mode) { 
   die "ERROR the -gene option is incompatible with -num";
 }
 if($do_plist_mode && $do_ntlist_mode) { 
@@ -254,10 +265,10 @@ if(defined $ffile && $no_ffile) {
 if(defined $sfile && $no_sfile) { 
   die "ERROR the -sfile and -nosfile options are incompatible"; 
 }
-if(defined $ngene && (! $do_gene_mode)) { 
+if(defined $ngene && (! $do_geneinfo_mode)) { 
   die "ERROR -ngene only makes sense in combination with the -gene option";
 }
-if(defined $do_allgene && (! $do_gene_mode)) { 
+if($do_allgene && (! $do_geneinfo_mode)) { 
   die "ERROR -agene only makes sense in combination with the -gene option";
 }
 
@@ -370,7 +381,7 @@ my $script_desc = "Fetch DNA sequences from GenBank";
 PrintToStdoutAndFile("# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -\n", $sum_FH);
 PrintToStdoutAndFile("# $script_name: $script_desc\n", $sum_FH);
 PrintToStdoutAndFile("# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -\n", $sum_FH);
-PrintToStdoutAndFile("# command: $executable $opts_used_short$symbol\n", $sum_FH);
+PrintToStdoutAndFile("# command: $executable $opts_used_short$argv_1\n", $sum_FH);
 PrintToStdoutAndFile(sprintf("# date:    %s\n", scalar localtime()), $sum_FH);
 if($opts_used_long ne "") { 
   PrintToStdoutAndFile("$opts_used_long", $sum_FH);
@@ -630,6 +641,12 @@ if($do_nosyn) {
   $acc_file = $new_acc_file; # rename $acc_file for subsequent steps
 } # end of 'if($do_nosyn)'
 
+# create the acconly file, which is the acc file minus versions
+my $acconly_file = $acc_file . "only";
+$cmd = "cat $acc_file | sed 's/\\.[0-9]*//' > $acconly_file";
+RunCommand($cmd, $be_verbose, $cmd_FH);
+OutputFileInfo($acconly_file, "Same accessions as $acc_file, but with versions removed (if any)", $cmd, $log_FH);
+
 #########################################################################################
 # Exit if we're in number-only mode, gene info mode, or we don't have any accessions left
 #########################################################################################
@@ -651,7 +668,7 @@ if(GetNumLinesInFile($acc_file) == 0) { # this is an okay result
   Conclude($start_secs, $do_nt, $sum_FH, $log_FH, $cmd_FH);
   exit 0;
 }
-if($do_gene_mode) { 
+if($do_geneinfo_mode) { 
   # we need to formulate queries for every N accessions, we can't use epost like we do elsewhere to post entire list of accessions
   my $gene_cmd;
   my $tax_cmd;
@@ -711,9 +728,9 @@ if($do_gene_mode) {
   OutputFileInfo($geneinfo_file,  "Tabular Gene info for all accessions in $acc_file", $gene_cmd_concat, $log_FH);
 
   # determine any lost/created tax ids 
-  $cmd = "awk '{ print \$1 }' $taxinfo_file | grep -v ^\# | sed 's/\\.[0-9]*//' | sort | comm -2 -3 - $acc_file > $taxinfo_file_created";
+  $cmd = "awk '{ print \$1 }' $taxinfo_file | grep -v ^\# | sed 's/\\.[0-9]*//' | sort | comm -2 -3 - $acconly_file > $taxinfo_file_created";
   RunCommand($cmd, $be_verbose, $cmd_FH);
-  $cmd = "awk '{ print \$1 }' $taxinfo_file | grep -v ^\# | sed 's/\\.[0-9]*//' | sort | comm -2 -3 $acc_file - > $taxinfo_file_lost";
+  $cmd = "awk '{ print \$1 }' $taxinfo_file | grep -v ^\# | sed 's/\\.[0-9]*//' | sort | comm -2 -3 $acconly_file - > $taxinfo_file_lost";
   RunCommand($cmd, $be_verbose, $cmd_FH);
   
   ($nlost, $ncreated, $errmsg) = CheckLostAndCreated($taxinfo_file_lost, 0, $taxinfo_file_created, 0); # '0' are max allowed lines in each of these files
@@ -730,7 +747,41 @@ if($do_gene_mode) {
   PrintToStdoutAndFile(sprintf("%-*s  %10d  %10s  %10s  %10.1f  %s\n", $desc_w, $desc, GetNumLinesInFile($geneinfo_file)-($ncmd+1), "N/A", "N/A", $nsecs, $geneinfo_file), $sum_FH);
 
   if($errmsg ne "") { die $errmsg; }
+} # end of 'if($do_geneinfo_mode)'
 
+if($do_ftable_mode) { 
+
+  my $database = ($do_nt) ? "nuccore" : "protein";
+  my $ft_file  = $out_dir . $symbol . ".ftable";
+  my $ft_acc_file     = $ft_file . ".acc";
+  my $ft_file_created = $ft_file . ".created";
+  my $ft_file_lost    = $ft_file . ".lost";
+  $cmd = "cat $acconly_file | epost -db $database -format acc | efetch -format ft > $ft_file";
+  $nsecs += RunCommand($cmd, $be_verbose, $cmd_FH);
+  OutputFileInfo($ft_file, "Feature table for all accessions in $acc_file", $cmd, $log_FH);
+
+  # now create a file with a list of the accessions that are listed in the ftable,
+  # so we can verify that we have an ftable for each accession
+#  $cmd = "grep ^\\> $ft_file | sed -e \'s/^>Feature\\s*[A-Za-z]*|//\' | sed -e \'s/|//g\' | sed 's/\\.[0-9]*//' | sort > $ft_acc_file";
+  $cmd = "grep ^\\> $ft_file | sed -e \'s/^>Feature\\s*[A-Za-z]*|//\' | sed -e \'s/|.*//\' | sed 's/\\.[0-9]*//' | sort > $ft_acc_file";
+  $nsecs += RunCommand($cmd, $be_verbose, $cmd_FH);
+  OutputFileInfo($ft_acc_file,  "All accessions listed in feature table in $ft_file (used for quality checking only)", $cmd, $log_FH);
+
+  # determine any lost/created tax ids 
+  $cmd = "comm -2 -3 $ft_acc_file $acconly_file > $ft_file_created";
+  $nsecs += RunCommand($cmd, $be_verbose, $cmd_FH);
+  $cmd = "comm -1 -3 $ft_acc_file $acconly_file > $ft_file_lost";
+  $nsecs += RunCommand($cmd, $be_verbose, $cmd_FH);
+  
+  ($nlost, $ncreated, $errmsg) = CheckLostAndCreated($ft_file_lost, 0, $ft_file_created, 0); # '0' are max allowed lines in each of these files
+  
+  $desc = "Feature_table_for_all_accessions";
+  PrintToStdoutAndFile(sprintf("%-*s  %10d  %10s  %10s  %10.1f  %s\n", $desc_w, $desc, GetNumLinesInFile($ft_file)-1, $nlost, $ncreated, $nsecs, $ft_file), $sum_FH);
+
+  if($errmsg ne "") { die $errmsg; }
+} # end of 'if($do_ftable_mode)'
+
+if($do_geneinfo_mode || $do_ftable_mode) { 
   Conclude($start_secs, $do_nt, $sum_FH, $log_FH, $cmd_FH);
   exit 0;
 }
@@ -1002,11 +1053,6 @@ my $fa_file_lost    = $fa_file . ".lost";
 my $fa_file_created = $fa_file . ".created";
 my $cds_or_nt       = ($do_nt) ? "nucleotide" : "CDS";
 $desc  = "CDS_sequences_in_FASTA_format";
-
-# Preliminary step: we need a version of $acc_file that has version information removed
-my $acconly_file = $out_dir . $symbol . ".acconly"; # same as $acc_file but with version info removed
-$cmd  = "cat $acc_file | sed 's/\\.[0-9]*//' > $acconly_file";
-RunCommand($cmd, $be_verbose, $cmd_FH);
 
 if($do_old) { 
   $cmd = "$idfetch -t 5 -c 1 -G $idfetch_file | $exec_dir/id_fasta.pl | $exec_dir/extract_fasta_multi_exon $efa_file > $fa_file";
@@ -1638,6 +1684,22 @@ sub checkFileForSymbol {
   return 0; # didn't find a match
 }
 
+# Subroutine: stripVersion()
+# Purpose:    Given a ref to an accession.version string, remove the version.
+# Args:       $accver_R: ref to accession version string
+# Returns:    Nothing, $$accver_R has version removed
+sub stripVersion {
+  my $sub_name  = "stripVersion()";
+  my $nargs_exp = 1;
+  if(scalar(@_) != $nargs_exp) { die "ERROR $sub_name entered with wrong number of input args"; }
+  
+  my ($accver_R) = (@_);
+
+  $$accver_R =~ s/\.[0-9]*$//; # strip version
+
+  return;
+}
+
 # Subroutine: updateTaxAndGeneinfo()
 # Purpose:    Given a ref to an array of accessions, use edirect to output Gene db information
 #             linked to those accessions, as well as taxid information.
@@ -1670,6 +1732,7 @@ sub updateTaxAndGeneinfo {
   my $naccn = scalar(@{$accn_AR});
   for(my $i = 0; $i < $naccn; $i++) { 
     my $accn = $accn_AR->[$i];
+    stripVersion(\$accn);
     $tax_H{$accn} = "";
     $accn_H{$accn} = 1;
     if($i > 0) { $query .= " OR "; }
@@ -1692,7 +1755,7 @@ sub updateTaxAndGeneinfo {
     my $found_taxon = 0;
     my $taxid = "";
     my $tax_accn = $elA[0];
-    $tax_accn =~ s/\.[0-9]*$//; # strip version
+    stripVersion(\$tax_accn);
     for(my $i = 1; $i < scalar(@elA); $i++) { 
       if($elA[$i] =~ /^taxon\:(\d+)/) { 
           $taxid = $1;
@@ -1741,7 +1804,7 @@ sub updateTaxAndGeneinfo {
         #10506	10971099	A329bR	NC_000852.5	166039	166224
         if(scalar(@elA) < 6) { die "ERROR parsing geneinfo line $geneline, at least 6 tab-delimited tokens expected: $geneline"; }
         my $cur_accn = $elA[3];
-        $cur_accn =~ s/\.[0-9]*$//; # strip version
+        stripVersion(\$cur_accn);
         if(exists $accn_H{$cur_accn}) { 
           $output_this_gene = 1;
         }
@@ -1763,6 +1826,7 @@ sub updateTaxAndGeneinfo {
 
   return($tax_cmd, $gene_cmd, ($end_secs - $start_secs));
 }
+
 # Subroutine: Conclude()
 # Purpose:    Print out conclusion text and close file handles in preparation for exit.
 # Args:       $start_secs: number of seconds since epoch and start of this script running
