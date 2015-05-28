@@ -50,6 +50,8 @@ $usage .= "\n";
 $usage .= " OPTIONS THAT ENABLE ALTERNATE MODES:\n";
 $usage .= "  -plist    : <symbol> is really a list of protein accessions,    requires -d option too\n";
 $usage .= "  -ntlist   : <symbol> is really a list of nucleotide accessions, requires -d option too\n";
+$usage .= "  -paccn    : <symbol> is really a single protein accession,    requires -d option too\n";
+$usage .= "  -ntaccn   : <symbol> is really a single nucleotide accession, requires -d option too\n";
 $usage .= "  -num      : determine number of matching protein/nucleotide accessions, then exit\n";
 $usage .= "  -geneinfo : output information on annotated genes in each record, then exit\n";
 $usage .= "  -ftable   : output feature table for each record, then exit\n";
@@ -110,6 +112,8 @@ my $do_geneinfo_mode = 0; # set to '1' if -geneinfo option used.
 my $do_ftable_mode   = 0; # set to '1' if -ftable option used.
 my $do_plist_mode    = 0; # set to '1' if -plist option used.
 my $do_ntlist_mode   = 0; # set to '1' if -ntlist option used.
+my $do_paccn_mode    = 0; # set to '1' if -paccn option used.
+my $do_ntaccn_mode   = 0; # set to '1' if -ntaccn option used.
 
 &GetOptions( "f"        => \$do_force, 
              "v"        => \$be_verbose,
@@ -118,6 +122,8 @@ my $do_ntlist_mode   = 0; # set to '1' if -ntlist option used.
              "notnt"    => \$do_not_try_nt,
              "plist"    => \$do_plist_mode,
              "ntlist"   => \$do_ntlist_mode,
+             "paccn"    => \$do_paccn_mode,
+             "ntaccn"   => \$do_ntaccn_mode,
              "num"      => \$do_num_mode,
              "geneinfo" => \$do_geneinfo_mode,
              "ftable"   => \$do_ftable_mode,
@@ -153,10 +159,6 @@ if(defined $out_dir) {
   $opts_used_short .= "-d $out_dir ";
   $opts_used_long  .= "# option:  output directory specified as $out_dir [-d]\n"; 
 }
-if($do_plist_mode) { 
-  $opts_used_short .= "-plist ";
-  $opts_used_long  .= "# option:  $symbol is a list of protein accessions, not a symbol [-plist]\n"; 
-}
 if($do_nt_userset) { 
   $opts_used_short .= "-nt ";
   $opts_used_long  .= "# option:  search in the nuccore database, not in the protein db [-nt]\n";
@@ -169,9 +171,21 @@ if($do_nosyn) {
   $opts_used_short .= "-nosyn ";
   $opts_used_long  .= "# option:  require a match to the gene symbol, gene_synonyms matches (or non matches) are ignored [-nosyn]\n";
 }
+if($do_plist_mode) { 
+  $opts_used_short .= "-plist ";
+  $opts_used_long  .= "# option:  $symbol is a list of protein accessions, not a symbol [-plist]\n"; 
+}
 if($do_ntlist_mode) { 
   $opts_used_short .= "-ntlist ";
   $opts_used_long  .= "# option:  $symbol is a list of nucleotide accessions, not a symbol [-ntlist]\n"; 
+}
+if($do_paccn_mode) { 
+  $opts_used_short .= "-paccn ";
+  $opts_used_long  .= "# option:  $symbol is a single protein accession, not a symbol [-paccn]\n"; 
+}
+if($do_ntaccn_mode) { 
+  $opts_used_short .= "-ntaccn ";
+  $opts_used_long  .= "# option:  $symbol is a single nucleotide accession, not a symbol [-ntaccn]\n"; 
 }
 if($do_num_mode) { 
   $opts_used_short .= "-num ";
@@ -221,26 +235,31 @@ if(defined $ngene) {
 # check for incompatible option combinations:
 if($do_plist_mode || $do_ntlist_mode) { 
   if(! defined $out_dir) { 
-    die "ERROR the -plist and -ntlist option requires the -d option";
+    die "ERROR the -plist and -ntlist options require the -d option";
   }
+}
+if($do_plist_mode || $do_ntlist_mode || $do_paccn_mode || $do_ntaccn_mode) { 
   if($do_nt_userset) { 
-    die "ERROR the -plist and -ntlist options are incompatible with -nt";
+    die "ERROR the -plist, -paccn, -ntlist and -ntaccn options are incompatible with -nt";
   }
   if($do_not_try_nt) { 
-    die "ERROR the -plist and -ntlist options are incompatible with -notnt";
+    die "ERROR the -plist, -paccn, -ntlist and -ntaccn options are incompatible with -notnt";
   }
   if($do_nosyn) { 
-    die "ERROR the -plist and -ntlist options are incompatible with -nosyn"; 
+    die "ERROR the -plist, -paccn, -ntlist and -ntaccn options are incompatible with -nosyn"; 
   }
   if($do_num_mode) { 
-    die "ERROR the -plist and -ntlist options are incompatible with -num";
+    die "ERROR the -plist, -paccn, -ntlist and -ntaccn options are incompatible with -num";
   }
   if(defined $ffile) { 
-    die "ERROR the -plist and -ntlist options are incompatible with -ffile";
+    die "ERROR the -plist, -paccn, -ntlist and -ntaccn options are incompatible with -ffile";
   }
   if(defined $sfile) { 
-    die "ERROR the -plist and -ntlist options are incompatible with -sfile";
+    die "ERROR the -plist, -paccn, -ntlist and -ntaccn options are incompatible with -sfile";
   }
+}
+if(($do_plist_mode + $do_ntlist_mode + $do_paccn_mode + $do_ntaccn_mode) > 1) { 
+  die "ERROR only one of -plist, -paccn, -ntlist and -ntaccn can be enabled"; 
 }
 if($do_num_mode && $do_geneinfo_mode) { 
   die "ERROR the -gene option is incompatible with -num";
@@ -290,8 +309,8 @@ if(! defined $ffile) { $ffile = $df_ffile; $using_df_ffile = 1; }
 if(! defined $sfile) { $sfile = $df_sfile; $using_df_sfile = 1; }
 if(! defined $ngene) { $ngene = $df_ngene; }
 
-$do_acclist_mode = ($do_plist_mode || $do_ntlist_mode) ? 1 : 0; # $do_acclist_mode is true if either -plist or -ntlist used
-$do_nt           = ($do_nt_userset || $do_ntlist_mode) ? 1 : 0;
+$do_acclist_mode = ($do_plist_mode || $do_ntlist_mode || $do_paccn_mode || $do_ntaccn_mode) ? 1 : 0; # $do_acclist_mode is true if any of -plist, -ntlist, -paccn, or -ntaccn used
+$do_nt           = ($do_nt_userset || ($do_ntlist_mode || $do_ntaccn_mode)) ? 1 : 0;
 
 ###############
 # Preliminaries
@@ -313,12 +332,17 @@ if(-e $out_dir) {
 }
 
 if($do_acclist_mode) { 
-  $acclist_file = $symbol;
+  if((! $do_paccn_mode) && (! $do_ntaccn_mode)) { 
+    $acclist_file = $symbol;
+    if(! -e $acclist_file) { die "ERROR no file $acclist_file exists"; }
+    if(! -s $acclist_file) { die "ERROR file $acclist_file is empty"; }
+  }
+  else { # -paccn or -ntaccn used
+    $acclist_file = $out_dir . "/" . $symbol . ".singleacclist";
+  }
   $symbol       = $out_dir; # this must be defined, we died above it if wasn't
   $symbol       =~ s/\///;
   $cap_symbol   = Capitalize($symbol);
-  if(! -e $acclist_file) { die "ERROR no file $acclist_file exists"; }
-  if(! -s $acclist_file) { die "ERROR file $acclist_file is empty"; }
   $no_ffile = 1;
   $no_sfile = 1;
 }
@@ -371,6 +395,16 @@ OutputFileInfo($log_file, "log file containing list and description of all outpu
 OutputFileInfo($sum_file, "summary file containing all standard output", "", $log_FH); 
 OutputFileInfo($cmd_file, "command file all executed commands", "", $log_FH); 
 
+if($do_paccn_mode || $do_ntaccn_mode) { 
+  open(OUT , ">" . $acclist_file) || die "ERROR unable to open $acclist_file for writing";
+  print OUT $symbol . "\n";
+  close(OUT);
+  $acclist_file = $out_dir . "/" . $symbol . ".singleacclist";
+  OutputFileInfo($acclist_file, "list file with single accession from -paccn or -ntaccn", "", $log_FH); 
+}
+
+
+
 if(defined $warn_msg) {     
   PrintToStdoutAndFile($warn_msg, $sum_FH);
 }
@@ -390,6 +424,8 @@ if(! $do_acclist_mode) {
   PrintToStdoutAndFile("# symbol:  $symbol\n", $sum_FH);
 }
 PrintToStdoutAndFile("#\n", $sum_FH);
+
+# if -ntaccn or -paccn, create an 
 
 
 ##############################
@@ -522,6 +558,56 @@ OutputFileInfo($acc_file_created, "Protein accessions ($ncreated) added by idsta
 PrintToStdoutAndFile(sprintf("%-*s  %10d  %10d  %10d  %10.1f  %s\n", $desc_w, $desc, GetNumLinesInFile($acc_file), $nlost, $ncreated, $nsecs, $acc_file), $sum_FH);
 if($errmsg ne "") { die $errmsg; }
 
+# if -ntlist or -plist was used, create a new version of the .ntlist or .plist file with
+# suppressed accessions removed (only those accessions in the $acc_file will be left)
+# in the original order they appeared in the .ntlist or .plist file.
+if($do_plist_mode || $do_ntlist_mode) { 
+  if($do_nt) { $desc  = "Non-suppressed_nucleotide_accessions_in_original_order"; }
+  else       { $desc  = "Non-suppressed_protein_accessions_in_original_order"; }
+  my ($seconds, $microseconds) = gettimeofday();
+  my $tmp_start_secs = ($seconds + ($microseconds / 1000000.));
+  # name the new output file:
+  my $acclist_file_ns = $acclist_file . ".not_suppressed";
+  # but we want to make sure we put it in $out_dir, so remove dir path and prepend $out_dir
+  $acclist_file_ns =~ s/^.+\///;
+  $acclist_file_ns = $out_dir . $acclist_file_ns;
+  
+  # first create a hash of the acconly accessions in $acc_file
+  my %keep_H = ();
+  my $accn;
+  my $nlost = 0;
+  open(IN, $acc_file) || die "ERROR unable to open $acc_file for reading";
+  while($accn = <IN>) { 
+    if($accn =~ m/\w/) { 
+      chomp $accn;
+      $keep_H{$accn} = 1;
+    }
+  }
+  close(IN);
+  open(IN,  $acclist_file)          || die "ERROR unable to open $acclist_file for reading"; 
+  open(OUT, ">" . $acclist_file_ns) || die "ERROR unable to open $acclist_file_ns for writing";
+  while($accn = <IN>) { 
+    if($accn =~ m/\w/) { 
+      chomp $accn;
+      my $accn_only = $accn;
+      stripVersion(\$accn_only);
+      if((exists $keep_H{$accn}) || (exists $keep_H{$accn_only})) { 
+        print OUT $accn . "\n";
+      }
+      else { 
+        $nlost++;
+      }
+    }
+  }
+  close(OUT);
+
+  # output information on this step to stdout and sum file
+  ($seconds, $microseconds) = gettimeofday();
+  my $tmp_end_secs = ($seconds + ($microseconds / 1000000.));
+  PrintToStdoutAndFile(sprintf("%-*s  %10d  %10d  %10d  %10.1f  %s\n", $desc_w, $desc, GetNumLinesInFile($acclist_file_ns), $nlost, 0, ($tmp_end_secs - $tmp_start_secs), $acclist_file_ns), $sum_FH);
+  if($errmsg ne "") { die $errmsg; }
+
+} # end of 'if($do_plist_mode || $do_ntlist_mode)'
 
 ###################################################################################
 # Optional Step: If -nosyn: remove accessions which have $symbol as a synonym
@@ -750,14 +836,32 @@ if($do_geneinfo_mode) {
 } # end of 'if($do_geneinfo_mode)'
 
 if($do_ftable_mode) { 
-
   my $database = ($do_nt) ? "nuccore" : "protein";
+
+  # first create a file with total lengths of each accession
+  my $len_file  = $out_dir . $symbol . ".length";
+  my $len_file_created = $len_file . ".created";
+  my $len_file_lost    = $len_file . ".lost";
+  $cmd = "cat $acconly_file | epost -db $database -format acc | efetch -format gpc | xtract -insd INSDSeq_length | grep . | sort > $len_file";
+  $nsecs = RunCommand($cmd, $be_verbose, $cmd_FH);
+  OutputFileInfo($len_file, "File with full lengths of sequence records with accessions in $acc_file", $cmd, $log_FH);
+
+  # determine any lost/created accessions
+  $cmd = "awk '{ print \$1 }' $len_file | sed 's/\\.[0-9]*//' | comm -2 -3 - $acconly_file > $len_file_created";
+  $nsecs += RunCommand($cmd, $be_verbose, $cmd_FH);
+  $cmd = "awk '{ print \$1 }' $len_file | sed 's/\\.[0-9]*//' | comm -1 -3 - $acconly_file > $len_file_lost";
+  $nsecs += RunCommand($cmd, $be_verbose, $cmd_FH);
+  ($nlost, $ncreated, $errmsg) = CheckLostAndCreated($len_file_lost, 0, $len_file_created, 0); # '0' are max allowed lines in each of these files
+  $desc = "Lengths_of_all_accessions";
+  PrintToStdoutAndFile(sprintf("%-*s  %10d  %10s  %10s  %10.1f  %s\n", $desc_w, $desc, GetNumLinesInFile($len_file), $nlost, $ncreated, $nsecs, $len_file), $sum_FH);
+
+  # create the feature table file
   my $ft_file  = $out_dir . $symbol . ".ftable";
   my $ft_acc_file     = $ft_file . ".acc";
   my $ft_file_created = $ft_file . ".created";
   my $ft_file_lost    = $ft_file . ".lost";
   $cmd = "cat $acconly_file | epost -db $database -format acc | efetch -format ft > $ft_file";
-  $nsecs += RunCommand($cmd, $be_verbose, $cmd_FH);
+  $nsecs = RunCommand($cmd, $be_verbose, $cmd_FH);
   OutputFileInfo($ft_file, "Feature table for all accessions in $acc_file", $cmd, $log_FH);
 
   # now create a file with a list of the accessions that are listed in the ftable,
@@ -767,7 +871,7 @@ if($do_ftable_mode) {
   $nsecs += RunCommand($cmd, $be_verbose, $cmd_FH);
   OutputFileInfo($ft_acc_file,  "All accessions listed in feature table in $ft_file (used for quality checking only)", $cmd, $log_FH);
 
-  # determine any lost/created tax ids 
+  # determine any lost/created accessions
   $cmd = "comm -2 -3 $ft_acc_file $acconly_file > $ft_file_created";
   $nsecs += RunCommand($cmd, $be_verbose, $cmd_FH);
   $cmd = "comm -1 -3 $ft_acc_file $acconly_file > $ft_file_lost";
