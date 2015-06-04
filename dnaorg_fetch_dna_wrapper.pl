@@ -854,6 +854,7 @@ if($do_ftable_mode) {
   ($nlost, $ncreated, $errmsg) = CheckLostAndCreated($len_file_lost, 0, $len_file_created, 0); # '0' are max allowed lines in each of these files
   $desc = "Lengths_of_all_accessions";
   PrintToStdoutAndFile(sprintf("%-*s  %10d  %10s  %10s  %10.1f  %s\n", $desc_w, $desc, GetNumLinesInFile($len_file), $nlost, $ncreated, $nsecs, $len_file), $sum_FH);
+  if($errmsg ne "") { die $errmsg; }
 
   # create the feature table file
   my $ft_file  = $out_dir . $symbol . ".ftable";
