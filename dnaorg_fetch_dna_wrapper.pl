@@ -55,6 +55,7 @@ $usage .= "  -ntaccn   : <symbol> is really a single nucleotide accession, requi
 $usage .= "  -num      : determine number of matching protein/nucleotide accessions, then exit\n";
 $usage .= "  -geneinfo : output information on annotated genes in each record, then exit\n";
 $usage .= "  -ftable   : output feature table for each record, then exit\n";
+$usage .= "  -matpept  : output information on mat_peptide features for each record, then exit\n";
 $usage .= "\n";
 $usage .= " OPTIONS THAT AFFECT FAILURE/WARNING OF PRE-DETERMINED SYMBOLS:\n";
 $usage .= "  -ffile <f> : fail          if a symbol listed in <f> is used as input symbol [default: $df_ffile]\n";
@@ -110,6 +111,7 @@ my $do_acclist_mode = 0;     # set to '1' if either -plist or -ntlist used
 my $do_num_mode      = 0; # set to '1' if -numonly option used.
 my $do_geneinfo_mode = 0; # set to '1' if -geneinfo option used.
 my $do_ftable_mode   = 0; # set to '1' if -ftable option used.
+my $do_matpept_mode  = 0; # set to '1' if -matpept option used.
 my $do_plist_mode    = 0; # set to '1' if -plist option used.
 my $do_ntlist_mode   = 0; # set to '1' if -ntlist option used.
 my $do_paccn_mode    = 0; # set to '1' if -paccn option used.
@@ -127,6 +129,7 @@ my $do_ntaccn_mode   = 0; # set to '1' if -ntaccn option used.
              "num"      => \$do_num_mode,
              "geneinfo" => \$do_geneinfo_mode,
              "ftable"   => \$do_ftable_mode,
+             "matpept"  => \$do_matpept_mode,
              "ffile=s"  => \$ffile,
              "sfile=s"  => \$sfile,
              "noffile"  => \$no_ffile,
@@ -195,9 +198,9 @@ if($do_geneinfo_mode) {
   $opts_used_short .= "-geneinfo ";
   $opts_used_long  .= "# option:  outputting annotated gene information, then exiting [-geneinfo]\n"; 
 }
-if($do_ftable_mode) { 
-  $opts_used_short .= "-ftable ";
-  $opts_used_long  .= "# option:  outputting feature table information, then exiting [-ftable]\n"; 
+if($do_matpept_mode) { 
+  $opts_used_short .= "-matpept ";
+  $opts_used_long  .= "# option:  outputting mat_peptide information, then exiting [-matpept]\n"; 
 }
 if(defined $ffile) { 
   $opts_used_short .= "-ffile $ffile ";
@@ -258,15 +261,9 @@ if($do_plist_mode || $do_ntlist_mode || $do_paccn_mode || $do_ntaccn_mode) {
     die "ERROR the -plist, -paccn, -ntlist and -ntaccn options are incompatible with -sfile";
   }
 }
-if(($do_plist_mode + $do_ntlist_mode + $do_paccn_mode + $do_ntaccn_mode) > 1) { 
-  die "ERROR only one of -plist, -paccn, -ntlist and -ntaccn can be enabled"; 
-}
-if($do_num_mode && $do_geneinfo_mode) { 
-  die "ERROR the -gene option is incompatible with -num";
-}
-if($do_num_mode && $do_ftable_mode) { 
-  die "ERROR the -gene option is incompatible with -num";
-}
+if(($do_num_mode + $do_geneinfo_mode + $do_ftable_mode + $do_matpept_mode) > 1) { 
+  die "ERROR, only one of the following options can be used: -num, -geneinfo, -ftable, and -matpept is incompatible with -num";
+}  
 if($do_plist_mode && $do_ntlist_mode) { 
   die "ERROR the -plist and -ntlist options are incompatible"; 
 }
@@ -835,10 +832,9 @@ if($do_geneinfo_mode) {
   if($errmsg ne "") { die $errmsg; }
 } # end of 'if($do_geneinfo_mode)'
 
-if($do_ftable_mode) { 
-  my $database = ($do_nt) ? "nuccore" : "protein";
-
-  # first create a file with total lengths of each accession
+my $database = ($do_nt) ? "nuccore" : "protein";
+if($do_ftable_mode || $do_matpept_mode) { 
+  # create a file with total lengths of each accession
   my $len_file  = $out_dir . $symbol . ".length";
   my $len_file_created = $len_file . ".created";
   my $len_file_lost    = $len_file . ".lost";
@@ -846,7 +842,7 @@ if($do_ftable_mode) {
   $nsecs = RunCommand($cmd, $be_verbose, $cmd_FH);
   OutputFileInfo($len_file, "File with full lengths of sequence records with accessions in $acc_file", $cmd, $log_FH);
 
-  # determine any lost/created accessions
+  # determine any lost/created accessions in the length file
   $cmd = "awk '{ print \$1 }' $len_file | sed 's/\\.[0-9]*//' | comm -2 -3 - $acconly_file > $len_file_created";
   $nsecs += RunCommand($cmd, $be_verbose, $cmd_FH);
   $cmd = "awk '{ print \$1 }' $len_file | sed 's/\\.[0-9]*//' | comm -1 -3 - $acconly_file > $len_file_lost";
@@ -856,37 +852,66 @@ if($do_ftable_mode) {
   PrintToStdoutAndFile(sprintf("%-*s  %10d  %10s  %10s  %10.1f  %s\n", $desc_w, $desc, GetNumLinesInFile($len_file), $nlost, $ncreated, $nsecs, $len_file), $sum_FH);
   if($errmsg ne "") { die $errmsg; }
 
-  # create the feature table file
-  my $ft_file  = $out_dir . $symbol . ".ftable";
-  my $ft_acc_file     = $ft_file . ".acc";
-  my $ft_file_created = $ft_file . ".created";
-  my $ft_file_lost    = $ft_file . ".lost";
-  $cmd = "cat $acconly_file | epost -db $database -format acc | efetch -format ft > $ft_file";
-  $nsecs = RunCommand($cmd, $be_verbose, $cmd_FH);
-  OutputFileInfo($ft_file, "Feature table for all accessions in $acc_file", $cmd, $log_FH);
+  if($do_ftable_mode) { 
+    # create the feature table file
+    my $ft_file  = $out_dir . $symbol . ".ftable";
+    my $ft_acc_file     = $ft_file . ".acc";
+    my $ft_file_created = $ft_file . ".created";
+    my $ft_file_lost    = $ft_file . ".lost";
+    $cmd = "cat $acconly_file | epost -db $database -format acc | efetch -format ft > $ft_file";
+    $nsecs = RunCommand($cmd, $be_verbose, $cmd_FH);
+    OutputFileInfo($ft_file, "Feature table for all accessions in $acc_file", $cmd, $log_FH);
+    
+    # now create a file with a list of the accessions that are listed in the ftable,
+    # so we can verify that we have an ftable for each accession
+    #  $cmd = "grep ^\\> $ft_file | sed -e \'s/^>Feature\\s*[A-Za-z]*|//\' | sed -e \'s/|//g\' | sed 's/\\.[0-9]*//' | sort > $ft_acc_file";
+    $cmd = "grep ^\\> $ft_file | sed -e \'s/^>Feature\\s*[A-Za-z]*|//\' | sed -e \'s/|.*//\' | sed 's/\\.[0-9]*//' | sort > $ft_acc_file";
+    $nsecs += RunCommand($cmd, $be_verbose, $cmd_FH);
+    OutputFileInfo($ft_acc_file,  "All accessions listed in feature table in $ft_file (used for quality checking only)", $cmd, $log_FH);
 
-  # now create a file with a list of the accessions that are listed in the ftable,
-  # so we can verify that we have an ftable for each accession
-#  $cmd = "grep ^\\> $ft_file | sed -e \'s/^>Feature\\s*[A-Za-z]*|//\' | sed -e \'s/|//g\' | sed 's/\\.[0-9]*//' | sort > $ft_acc_file";
-  $cmd = "grep ^\\> $ft_file | sed -e \'s/^>Feature\\s*[A-Za-z]*|//\' | sed -e \'s/|.*//\' | sed 's/\\.[0-9]*//' | sort > $ft_acc_file";
-  $nsecs += RunCommand($cmd, $be_verbose, $cmd_FH);
-  OutputFileInfo($ft_acc_file,  "All accessions listed in feature table in $ft_file (used for quality checking only)", $cmd, $log_FH);
+    # determine any lost/created accessions
+    $cmd = "comm -2 -3 $ft_acc_file $acconly_file > $ft_file_created";
+    $nsecs += RunCommand($cmd, $be_verbose, $cmd_FH);
+    $cmd = "comm -1 -3 $ft_acc_file $acconly_file > $ft_file_lost";
+    $nsecs += RunCommand($cmd, $be_verbose, $cmd_FH);
+    
+    ($nlost, $ncreated, $errmsg) = CheckLostAndCreated($ft_file_lost, 0, $ft_file_created, 0); # '0' are max allowed lines in each of these files
+    
+    $desc = "Feature_table_for_all_accessions";
+    PrintToStdoutAndFile(sprintf("%-*s  %10d  %10s  %10s  %10.1f  %s\n", $desc_w, $desc, GetNumLinesInFile($ft_file)-1, $nlost, $ncreated, $nsecs, $ft_file), $sum_FH);
+  } # end of 'if($do_ftable_mode)'
 
-  # determine any lost/created accessions
-  $cmd = "comm -2 -3 $ft_acc_file $acconly_file > $ft_file_created";
-  $nsecs += RunCommand($cmd, $be_verbose, $cmd_FH);
-  $cmd = "comm -1 -3 $ft_acc_file $acconly_file > $ft_file_lost";
-  $nsecs += RunCommand($cmd, $be_verbose, $cmd_FH);
-  
-  ($nlost, $ncreated, $errmsg) = CheckLostAndCreated($ft_file_lost, 0, $ft_file_created, 0); # '0' are max allowed lines in each of these files
-  
-  $desc = "Feature_table_for_all_accessions";
-  PrintToStdoutAndFile(sprintf("%-*s  %10d  %10s  %10s  %10.1f  %s\n", $desc_w, $desc, GetNumLinesInFile($ft_file)-1, $nlost, $ncreated, $nsecs, $ft_file), $sum_FH);
-
+  if($do_matpept_mode) { 
+    # create the mat_peptide file
+    my $mp_file  = $out_dir . $symbol . ".mat_peptide";
+    my $mp_acc_file     = $mp_file . ".acc";
+    my $mp_file_created = $mp_file . ".created";
+    my $mp_file_lost    = $mp_file . ".lost";
+    $cmd = "cat $acconly_file | epost -db $database -format acc | efetch -format gpc | xtract -insd mat_peptide INSDInterval_from INSDInterval_to protein_id product > $mp_file";
+    $nsecs = RunCommand($cmd, $be_verbose, $cmd_FH);
+    OutputFileInfo($mp_file, "File with mat_peptide info for all accessions in $acc_file", $cmd, $log_FH);
+    
+    # now create a file with a list of the accessions that are listed in the mat_peptide,
+    # so we can check which accessions we have info for and which we do not
+    $cmd = "grep . $mp_file | awk '{ print \$1 }' | sed 's/\\.[0-9]*//' | sort | uniq > $mp_acc_file";
+    $nsecs += RunCommand($cmd, $be_verbose, $cmd_FH);
+    OutputFileInfo($mp_acc_file,  "All accessions for which mat_peptide info exists in $mp_file", $cmd, $log_FH);
+    
+    # determine any lost/created accessions
+    $cmd = "comm -2 -3 $mp_acc_file $acconly_file > $mp_file_created";
+    $nsecs += RunCommand($cmd, $be_verbose, $cmd_FH);
+    $cmd = "comm -1 -3 $mp_acc_file $acconly_file > $mp_file_lost";
+    $nsecs += RunCommand($cmd, $be_verbose, $cmd_FH);
+    
+    ($nlost, $ncreated, $errmsg) = CheckLostAndCreated($mp_file_lost, -1, $mp_file_created, 0); # '-1' indicates there's no restrictions on how many lines are allowed in the lost file, '0' says none can be in the created file
+    
+    $desc = "Mat_peptide_info_for_all_accessions";
+    PrintToStdoutAndFile(sprintf("%-*s  %10d  %10s  %10s  %10.1f  %s\n", $desc_w, $desc, GetNumLinesInFile($mp_acc_file), $nlost, $ncreated, $nsecs, $mp_file), $sum_FH);
+  }
   if($errmsg ne "") { die $errmsg; }
-} # end of 'if($do_ftable_mode)'
+} # end of 'if($do_ftable_mode || $do_matpept_mode)'
 
-if($do_geneinfo_mode || $do_ftable_mode) { 
+if($do_geneinfo_mode || $do_ftable_mode || $do_matpept_mode) { 
   Conclude($start_secs, $do_nt, $sum_FH, $log_FH, $cmd_FH);
   exit 0;
 }
