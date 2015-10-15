@@ -261,8 +261,11 @@ if($do_plist_mode || $do_ntlist_mode || $do_paccn_mode || $do_ntaccn_mode) {
     die "ERROR the -plist, -paccn, -ntlist and -ntaccn options are incompatible with -sfile";
   }
 }
-if(($do_num_mode + $do_geneinfo_mode + $do_ftable_mode + $do_matpept_mode) > 1) { 
-  die "ERROR, only one of the following options can be used: -num, -geneinfo, -ftable, and -matpept is incompatible with -num";
+if(($do_num_mode + $do_geneinfo_mode + $do_ftable_mode) > 1) { 
+  die "ERROR, only one of the following options can be used: -num, -geneinfo, -ftable";
+}  
+if(($do_num_mode + $do_geneinfo_mode + $do_matpept_mode) > 1) { 
+  die "ERROR, only one of the following options can be used: -num, -geneinfo, -ftable";
 }  
 if($do_plist_mode && $do_ntlist_mode) { 
   die "ERROR the -plist and -ntlist options are incompatible"; 
@@ -887,7 +890,8 @@ if($do_ftable_mode || $do_matpept_mode) {
     my $mp_acc_file     = $mp_file . ".acc";
     my $mp_file_created = $mp_file . ".created";
     my $mp_file_lost    = $mp_file . ".lost";
-    $cmd = "cat $acconly_file | epost -db $database -format acc | efetch -format gpc | xtract -insd mat_peptide INSDInterval_from INSDInterval_to protein_id product > $mp_file";
+    # OLD AS OF 10.15.15: $cmd = "cat $acconly_file | epost -db $database -format acc | efetch -format gpc | xtract -insd mat_peptide INSDInterval_from INSDInterval_to product > $mp_file";
+    $cmd = "cat $acconly_file | epost -db $database -format acc | efetch -format gpc | xtract -insd mat_peptide INSDFeature_location product > $mp_file";
     $nsecs = RunCommand($cmd, $be_verbose, $cmd_FH);
     OutputFileInfo($mp_file, "File with mat_peptide info for all accessions in $acc_file", $cmd, $log_FH);
     
